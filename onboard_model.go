@@ -8,6 +8,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/url"
 	"slices"
@@ -20,7 +21,6 @@ import (
 	"github.com/agilira/go-errors"
 
 	agent "github.com/agilira/ringil-agent-sdk"
-	"github.com/agilira/ringil-agent-sdk/internal/safehttp"
 	"github.com/agilira/ringil-agent-sdk/provider/anthropic"
 	"github.com/agilira/ringil-agent-sdk/provider/chatgpt"
 	"github.com/agilira/ringil-agent-sdk/provider/openai"
@@ -98,7 +98,7 @@ func (s *setup) checkServer(v string) error {
 	if err != nil {
 		return err
 	}
-	if u.Scheme == "https" || safehttp.Loopback(u.Hostname()) {
+	if u.Scheme == "https" || loopback(u.Hostname()) {
 		return nil
 	}
 	yes, err := s.p.Confirm("Plain http to another machine: the key and every message travel unencrypted. Allow it?", false)
@@ -385,4 +385,11 @@ func (s *setup) label() string {
 		return s.endpoint.name
 	}
 	return s.provider.label
+}
+
+// loopback: host is a loopback address, where plain HTTP never leaves the
+// machine.
+func loopback(host string) bool {
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }

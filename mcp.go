@@ -20,7 +20,6 @@ import (
 
 	agent "github.com/agilira/ringil-agent-sdk"
 	"github.com/agilira/ringil-agent-sdk/egress"
-	"github.com/agilira/ringil-agent-sdk/internal/lockfile"
 	"github.com/agilira/ringil-agent-sdk/mcp"
 	"github.com/agilira/ringil-agent-sdk/secrets"
 )
@@ -74,7 +73,7 @@ func readPrivate(path string) ([]byte, error) {
 		return nil, err
 	}
 	defer closeRoot(root)
-	f, err := root.OpenFile(filepath.Base(path), os.O_RDONLY|lockfile.NoFollow, 0)
+	f, err := root.OpenFile(filepath.Base(path), os.O_RDONLY|noFollow, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +82,7 @@ func readPrivate(path string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !info.Mode().IsRegular() || lockfile.CheckPrivate(info) != nil {
+	if !info.Mode().IsRegular() || !private(info) {
 		return nil, errors.New(ErrUsage, "the configuration must be a regular file of yours, not writable by others")
 	}
 	return io.ReadAll(io.LimitReader(f, 1<<20))

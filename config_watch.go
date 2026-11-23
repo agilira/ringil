@@ -22,7 +22,6 @@ import (
 	"github.com/agilira/orpheus/pkg/orpheus"
 
 	agent "github.com/agilira/ringil-agent-sdk"
-	"github.com/agilira/ringil-agent-sdk/internal/lockfile"
 )
 
 // settings is the configuration in force, shared by serve's runs: the
@@ -323,7 +322,7 @@ func instructionsText(watched *argus.Settings, path string) (string, error) {
 		return "", errors.New(ErrUsage, "cannot read the instructions in "+path)
 	}
 	info, err := os.Lstat(path)
-	if err != nil || !info.Mode().IsRegular() || lockfile.CheckPrivate(info) != nil {
+	if err != nil || !info.Mode().IsRegular() || !private(info) {
 		return "", errors.New(ErrUsage, path+": instructions must be a regular file of yours, not writable by others")
 	}
 	text := docs[0].String()

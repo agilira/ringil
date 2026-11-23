@@ -28,7 +28,6 @@ import (
 	"github.com/agilira/ringil-agent-sdk/a2a"
 	"github.com/agilira/ringil-agent-sdk/channel"
 	"github.com/agilira/ringil-agent-sdk/eventlog"
-	"github.com/agilira/ringil-agent-sdk/internal/lockfile"
 	"github.com/agilira/ringil-agent-sdk/metrics"
 	"github.com/agilira/ringil-agent-sdk/secrets"
 	"github.com/agilira/ringil-agent-sdk/serve"
@@ -302,7 +301,7 @@ func awaitToken(root *os.Root, path string) (string, string, error) {
 // else, 32 characters or more.
 func keptToken(root *os.Root, info os.FileInfo, path string) (string, error) {
 	bad := errors.New(ErrUsage, path+" is not a private file with a token of 32 characters or more; remove it to make a new one")
-	if !info.Mode().IsRegular() || lockfile.CheckPrivate(info) != nil || (runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0) {
+	if !info.Mode().IsRegular() || !private(info) || (runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0) {
 		return "", bad
 	}
 	data, err := root.ReadFile(tokenFile)

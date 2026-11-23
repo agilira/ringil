@@ -409,7 +409,7 @@ func (c *cli) resetErrOut() {
 
 // The example in docs is the schema: it binds strictly and passes Validate.
 func TestTheExampleIsValid(t *testing.T) {
-	watched, err := argus.Setup("ringil").File(filepath.Join("..", "..", "docs", "ringil.example.yaml")).Start()
+	watched, err := argus.Setup("ringil").File(filepath.Join("docs", "ringil.example.yaml")).Start()
 	if err != nil {
 		t.Fatal(err)
 	}

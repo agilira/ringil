@@ -1,0 +1,14 @@
+coverage.out
+coverage.html
+*.test
+
+# Workspaces are local, never committed
+go.work
+go.work.sum
+
+# Local credentials for live tests, never committed
+.env
+
+# Build output
+/ringil
+/ringil.exe
