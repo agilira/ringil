@@ -113,7 +113,7 @@ func TestSetupFromNothing(t *testing.T) {
 func checkWritten(t *testing.T, dir, base, prompt string) {
 	t.Helper()
 	data, _ := os.ReadFile(filepath.Join(dir, "ringil", "ringil.yaml"))
-	for _, want := range []string{"provider: " + serverName(base), "base: " + base, "key_env: " + keyNameOf(serverName(base)), "model: model-a", "instructions: " + prompt, "kind: sqlite", "store: file", "- \"42\""} {
+	for _, want := range []string{"- " + serverName(base) + ":model-a", "base: " + base, "key_env: " + keyNameOf(serverName(base)), "instructions: " + prompt, "kind: sqlite", "store: file", "- \"42\""} {
 		if !strings.Contains(string(data), want) {
 			t.Errorf("ringil.yaml lacks %q:\n%s", want, data)
 		}
@@ -128,7 +128,7 @@ func checkWritten(t *testing.T, dir, base, prompt string) {
 func TestSetupKeepsTheRest(t *testing.T) {
 	h, _ := setupHarness(t, []string{"y", "2", "frase lunga davvero", "frase lunga davvero", "6", "llama3", "", "1", "1", "n"}, map[string]string{})
 	h.c.setupBases = map[string]string{"ollama": "http://127.0.0.1:1/v1"} // no Ollama there: the list fails, the name is asked
-	old := "# my settings\nmodel: old-model\nprofiles:\n  writer: {model: big}  # the writer\nnotes: https://example.com/a/very/long/address/of/the/team/notes/that/goes/past/eighty/columns\n"
+	old := "# my settings\nmodel: old-model\nprofiles:\n  writer: {models: [openai:big]}  # the writer\nnotes: https://example.com/a/very/long/address/of/the/team/notes/that/goes/past/eighty/columns\n"
 	writeProfiles(t, h.dir, old)
 	if code := h.run("setup"); code != exitOK {
 		t.Fatalf("exit %d: %s", code, h.err)
@@ -139,7 +139,7 @@ func TestSetupKeepsTheRest(t *testing.T) {
 	if len(baks) == 1 {
 		bak, _ = os.ReadFile(baks[0])
 	}
-	for _, want := range []string{"# my settings", "writer:", "# the writer", "base: http://127.0.0.1:1/v1", "model: llama3", "notes: https://example.com/a/very/long/address/of/the/team/notes/that/goes/past/eighty/columns\n"} {
+	for _, want := range []string{"# my settings", "writer:", "# the writer", "base: http://127.0.0.1:1/v1", "- ollama:llama3", "notes: https://example.com/a/very/long/address/of/the/team/notes/that/goes/past/eighty/columns\n"} {
 		if !strings.Contains(string(data), want) {
 			t.Errorf("lost %q:\n%s", want, data)
 		}
@@ -383,7 +383,7 @@ func TestSetupComposioSkipped(t *testing.T) {
 		if code := h.run("setup"); code != exitOK {
 			t.Fatalf("%s: exit %d: %s", name, code, h.err)
 		}
-		yamlHas(t, h.dir, []string{"model: llama3"}, []string{"mcp_servers", "COMPOSIO"})
+		yamlHas(t, h.dir, []string{"- ollama:llama3"}, []string{"mcp_servers", "COMPOSIO"})
 	}
 }
 
@@ -453,7 +453,7 @@ func TestSetupBuiltinProviders(t *testing.T) {
 			t.Fatalf("%s: exit %d: %s", tc.name, code, h.err)
 		}
 		data, _ := os.ReadFile(filepath.Join(h.dir, "ringil", "ringil.yaml"))
-		if !strings.Contains(string(data), "provider: "+tc.name+"\n") || !strings.Contains(string(data), "key_env: "+builtinProviders[tc.name].KeyEnv) {
+		if !strings.Contains(string(data), "- "+tc.name+":") || !strings.Contains(string(data), "key_env: "+builtinProviders[tc.name].KeyEnv) {
 			t.Errorf("%s:\n%s", tc.name, data)
 		}
 		keys, err := store.Open(context.Background(), store.Config{Kind: store.File, File: filepath.Join(h.dir, "ringil", "secrets.enc"), PassphraseEnv: "P"}, secrets.Map{"P": "frase lunga davvero"})

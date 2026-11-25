@@ -22,14 +22,18 @@ import (
 // config is ringil.yaml. A setting given as a flag wins for that command;
 // the provider, model and embedding model in the environment
 // (RINGIL_PROVIDER, RINGIL_MODEL, RINGIL_EMBED_MODEL) win over the file.
+// The models are one ordered list (models.go): the first answers, the
+// others in order when it does not.
 // Keys are the global flags' names with _ for -. Secrets are never in it:
 // key_env and ${NAME} name the variables that hold them.
 type config struct {
-	Model string `argus:"model"`
-	// Provider is the main model's provider, by name: a built-in one or
-	// one of Providers.
-	Provider  string                   `argus:"provider"`
+	// Models are provider:model, in order: the first is the main one.
+	Models    []string                 `argus:"models"`
 	Providers map[string]providerEntry `argus:"providers"`
+	// OldModel and OldProvider are the settings of before the list, read
+	// only to say where they went.
+	OldModel    string `argus:"model"`
+	OldProvider string `argus:"provider"`
 	// OldBase and OldKeyEnv are the endpoint settings of before named
 	// providers, read only to say where they went: a file that has them
 	// is refused.
@@ -289,7 +293,7 @@ func (s serveConfig) fixed() serveConfig {
 // Validate is what a file must be to be applied at all: a reload that
 // fails it is refused and the last good file stays.
 func (f *config) Validate() error {
-	checks := []func() error{f.checkGone, f.Proxy.check, f.Permissions.check, f.checkProviders, f.checkProfiles, f.checkPaths, f.Memory.check, f.Embedder.check, f.checkMCP, f.Serve.check, f.Secrets.check, f.checkCosts}
+	checks := []func() error{f.checkGone, f.Proxy.check, f.Permissions.check, f.checkProviders, f.checkProfiles, f.checkPaths, f.Memory.check, f.Embedder.check, f.checkMCP, f.Serve.check, f.Secrets.check, f.checkCosts, f.checkAllModels}
 	for _, check := range checks {
 		if err := check(); err != nil {
 			return err
@@ -368,7 +372,7 @@ func restartFor(old, next *config) string {
 	if !reflect.DeepEqual(old.Serve.fixed(), next.Serve.fixed()) {
 		changed = append(changed, "serve")
 	}
-	if old.AllowHTTP != next.AllowHTTP || !reflect.DeepEqual(old.Providers, next.Providers) || old.Provider != next.Provider {
+	if old.AllowHTTP != next.AllowHTTP || !reflect.DeepEqual(old.Providers, next.Providers) || mainProvider(old) != mainProvider(next) {
 		changed = append(changed, "allow_http, provider and providers for the chats' voice")
 	}
 	if !sameKeys(old.Profiles, next.Profiles) {
@@ -419,10 +423,6 @@ func (c *cli) flagInt(ctx *orpheus.Context, name string) int {
 
 func (f *config) stringOf(name string) string {
 	switch name {
-	case "model":
-		return f.Model
-	case "provider":
-		return f.Provider
 	case "embed-model":
 		return f.EmbedModel
 	case "instructions":
@@ -470,4 +470,10 @@ func (c *cli) withConfig(run func(*orpheus.Context) error) func(*orpheus.Context
 		defer c.shutdown() // whatever the command: what it opened is closed, the audit flushed
 		return run(ctx)
 	}
+}
+
+// mainProvider is the provider of the file's main model.
+func mainProvider(f *config) string {
+	m, _ := first(f.Models)
+	return m.provider
 }

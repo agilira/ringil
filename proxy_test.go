@@ -22,7 +22,7 @@ func TestTheProxyIsTheFiles(t *testing.T) {
 	h := newHarness(t, "")
 	h.c.ownProxy()
 	for body, want := range map[string]map[string]string{
-		"model: m\n": {"https://api.openai.com/v1": ""},
+		"models: [openai:m]\n": {"https://api.openai.com/v1": ""},
 		"proxy: {url: \"http://proxy.corp:3128\", no_proxy: [internal.corp, 10.0.0.0/8]}\n": {
 			"https://api.openai.com/v1": "http://proxy.corp:3128", "http://api.openai.com/v1": "",
 			"https://llm.internal.corp/v1": "", "https://10.1.2.3/v1": ""},

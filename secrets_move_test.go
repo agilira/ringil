@@ -93,7 +93,7 @@ func fileStore(t *testing.T, dir, passphrase string) secrets.Store {
 // back; ringil.yaml switches, keeping the rest; nothing is deleted.
 func TestSecretsMoveFromTheEnvironment(t *testing.T) {
 	dir := t.TempDir()
-	writeProfiles(t, dir, "# keep me\nprovider: deepseek\nmcp_servers:\n  c: {url: \"https://c.example/mcp\", headers: {X-Key: \"${C_KEY}\"}}\n")
+	writeProfiles(t, dir, "# keep me\nmodels: [deepseek:deepseek-chat]\nmcp_servers:\n  c: {url: \"https://c.example/mcp\", headers: {X-Key: \"${C_KEY}\"}}\n")
 	vars := map[string]string{"DEEPSEEK_API_KEY": "ds", "C_KEY": "c", "UNRELATED": "u", "RINGIL_SECRETS_PASSPHRASE": "frase lunga davvero"}
 	out := secretsCommand(t, dir, "", vars, "move", "file")
 	if !strings.Contains(out, "copied 2 keys") || !strings.Contains(out, "C_KEY, DEEPSEEK_API_KEY") || strings.Contains(out, "Delete them") {
@@ -275,7 +275,7 @@ func TestSecretsMoveKeepsTheSignInInAStore(t *testing.T) {
 // from is in the audit's hash chain, by name.
 func TestShadowsNamedAndSourcesAudited(t *testing.T) {
 	dir := t.TempDir()
-	writeProfiles(t, dir, "provider: openai\nmodel: m\n")
+	writeProfiles(t, dir, "models: [openai:m]\n")
 	vars := map[string]string{"OPENAI_API_KEY": "sk-env", "RINGIL_SECRETS_PASSPHRASE": "frase lunga davvero"}
 	out := secretsCommand(t, dir, "", vars, "move", "file")
 	if !strings.Contains(out, "still in your environment or env file, remove them") || !strings.Contains(out, "OPENAI_API_KEY") || strings.Contains(out, "sk-env") {
@@ -297,7 +297,7 @@ func TestShadowsNamedAndSourcesAudited(t *testing.T) {
 // would go to the planter's account.
 func TestAPlantedProviderKeyIsRefused(t *testing.T) {
 	dir := t.TempDir()
-	writeProfiles(t, dir, "secrets: {store: file}\nprovider: anthropic\nmodel: m\n")
+	writeProfiles(t, dir, "secrets: {store: file}\nmodels: [anthropic:m]\n")
 	vars := map[string]string{"RINGIL_SECRETS_PASSPHRASE": "frase lunga davvero"}
 	secretsCommand(t, dir, "sk-mine\n", vars, "set", "OPENAI_API_KEY")
 	planted := map[string]string{"RINGIL_SECRETS_PASSPHRASE": "frase lunga davvero", "ANTHROPIC_API_KEY": "sk-theirs"}
@@ -341,7 +341,7 @@ func TestSecretsSetNamesAShadow(t *testing.T) {
 // serve's and the bot's tokens come from the store alone.
 func TestWithAStoreTheEnvironmentPicksNoProviderNorToken(t *testing.T) {
 	dir := t.TempDir()
-	writeProfiles(t, dir, "secrets: {store: file}\nprovider: openai\nmodel: m\n")
+	writeProfiles(t, dir, "secrets: {store: file}\nmodels: [openai:m]\n")
 	vars := map[string]string{"RINGIL_SECRETS_PASSPHRASE": "frase lunga davvero"}
 	secretsCommand(t, dir, "sk-mine\n", vars, "set", "OPENAI_API_KEY")
 	planted := map[string]string{"RINGIL_SECRETS_PASSPHRASE": "frase lunga davvero", "RINGIL_PROVIDER": "ollama", "RINGIL_SERVE_TOKEN": "planted-token"}

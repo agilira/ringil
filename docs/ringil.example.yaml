@@ -7,16 +7,24 @@
 # instructions and sessions_dir are from this file's directory. A key
 # ringil does not know is an error.
 
-# The model's provider, by name. Built in, with the secret holding the key:
+# The models, in order, as provider:model: the first answers; the others,
+# in their order, when it does not (server down, too many requests, an
+# answer cut or garbled, the key refused). One with no key is left out; a
+# conversation goes to no provider that is not listed. --provider and
+# --model (or RINGIL_PROVIDER, RINGIL_MODEL) put another first; --models
+# replaces the list. The provider by name. Built in, with the secret
+# holding the key:
 # anthropic (ANTHROPIC_API_KEY), chatgpt (a subscription: no key, `ringil
 # login chatgpt` signs in), openai (OPENAI_API_KEY), google (Gemini,
 # GEMINI_API_KEY), openrouter (OPENROUTER_API_KEY), nvidia (NIM,
 # NVIDIA_API_KEY), deepseek (DEEPSEEK_API_KEY), requesty
 # (REQUESTY_API_KEY), zai (ZAI_API_KEY), moonshot (MOONSHOT_API_KEY),
-# xai (Grok, XAI_API_KEY), mistral (MISTRAL_API_KEY), ollama (this machine, no key). Each key goes to its own provider and to
-# no other.
-provider: work
-model: example-model
+# xai (Grok, XAI_API_KEY), mistral (MISTRAL_API_KEY), ollama (this
+# machine, no key). Each key goes to its own provider and to no other.
+models:
+  - work:example-model
+  - openrouter:anthropic/claude-sonnet-5.5
+  - ollama:qwen3:8b
 embed_model: example-embed     # memory by meaning; leave out for words
 
 # Providers of your own, as many as you like, each with a name: kind
@@ -147,7 +155,7 @@ speech:
 # audit_file: /var/log/ringil/audit.db   # default <config>/ringil/audit.db
 no_audit: false
 
-# Profiles: roles with their own provider and model, instructions,
+# Profiles: roles with their own models (and no other), instructions,
 # tools and memory. --profile NAME picks one; serve offers them all.
 profiles:
   support:
@@ -157,12 +165,10 @@ profiles:
     memory: chat               # each chat its own; "off" none
     max_turns: 10
   local:
-    provider: ollama           # another provider: its own endpoint and key
-    model: local-model
+    models: [ollama:local-model]   # another provider: its own endpoint and key
     images: true
   claude:
-    provider: anthropic
-    model: claude-haiku-5-5
+    models: [anthropic:claude-haiku-5-5, openrouter:anthropic/claude-haiku-5.5]
 
 # MCP servers, with the keys of the common format: a server's entry in
 # JSON from a vendor's page goes here as it is (JSON is YAML).

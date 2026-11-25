@@ -103,7 +103,7 @@ func TestPermissionsFromTheFile(t *testing.T) {
 
 func TestAlwaysIsKept(t *testing.T) {
 	h := newHarness(t, "p\na\n")
-	path := writeConfig(t, h.dir, "# mine\nmodel: m\n")
+	path := writeConfig(t, h.dir, "# mine\nmodels: [openai:m]\n")
 	edit := agent.ToolSpec{Name: "write_file", Annotations: agent.Annotations{Edits: true}, InputSchema: []byte(`{"type":"object","properties":{"path":{"type":"string"}}}`)}
 	risky := agent.ToolSpec{Name: "forget", Annotations: agent.Annotations{Destructive: true}}
 	calls := []struct {
@@ -153,7 +153,7 @@ func TestATriggerHonoursTheRules(t *testing.T) {
 
 func TestRememberProjectFailureStillAllowsSession(t *testing.T) {
 	h := newHarness(t, "p\n")
-	path := writeConfig(t, h.dir, "model: m\n")
+	path := writeConfig(t, h.dir, "models: [openai:m]\n")
 	edit := agent.ToolSpec{Name: "write_file", Annotations: agent.Annotations{Edits: true}, InputSchema: []byte(`{"type":"object","properties":{"path":{"type":"string"}}}`)}
 	loaded(t, h.c, nil, func(ctx *orpheus.Context) error {
 		if err := os.WriteFile(path, []byte("[\n"), 0o600); err != nil {

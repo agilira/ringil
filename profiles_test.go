@@ -35,7 +35,7 @@ func writeProfiles(t *testing.T, dir, body string) {
 
 func TestProfileOverridesModelAndPrompt(t *testing.T) {
 	h := newHarness(t, "", fake.Reply("ok"))
-	writeProfiles(t, h.dir, `{"providers":{"writers":{"base":"http://localhost:2/v1","key_env":"WRITER_KEY"}},"profiles":{"writer":{"description":"writes","model":"big-model","provider":"writers","instructions":"writer.md"}}}`)
+	writeProfiles(t, h.dir, `{"providers":{"writers":{"base":"http://localhost:2/v1","key_env":"WRITER_KEY"}},"profiles":{"writer":{"description":"writes","models":["writers:big-model"],"instructions":"writer.md"}}}`)
 	if err := os.WriteFile(filepath.Join(h.dir, "ringil", "writer.md"), []byte("You write prose.\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestProfilesRefused(t *testing.T) {
 		`{"profiles":{"default":{}}}`,
 		`{"profiles":{"bad name":{}}}`,
 		`{"profiles":{"w":{"key_env":"K"}}}`,
-		`{"profiles":{"w":{"provider":"nowhere"}}}`,
+		`{"profiles":{"w":{"models":["nowhere:m"]}}}`,
 		`{"profiles":{"w":{"temperature":1}}}`,
 		`{"profiles":{"w":{"max_turns":-1}}}`,
 	} {
@@ -126,7 +126,7 @@ func probe(t *testing.T, c *cli, args []string, fn func(ctx *orpheus.Context) er
 // key. A provider without key_env gets none.
 func TestRoleNeverGetsTheMainKey(t *testing.T) {
 	h := newHarness(t, "", fake.Reply("ok"))
-	writeProfiles(t, h.dir, `{"providers":{"lan":{"base":"http://localhost:9/v1"}},"profiles":{"other":{"provider":"lan"}}}`)
+	writeProfiles(t, h.dir, `{"providers":{"lan":{"base":"http://localhost:9/v1"}},"profiles":{"other":{"models":["lan:m"]}}}`)
 	if code := h.run("--profile", "other", "--no-tools", "run", "hi"); code != 0 {
 		t.Fatalf("exit %d: %s", code, h.err)
 	}
@@ -140,8 +140,8 @@ func TestRoleNeverGetsTheMainKey(t *testing.T) {
 // and embed_model, or none.
 func TestRoleEmbeddings(t *testing.T) {
 	for body, want := range map[string]string{
-		`{"providers":{"lan":{"base":"http://localhost:9/v1","key_env":"LOCAL_KEY"}},"profiles":{"local":{"provider":"lan","embed_model":"le"}}}`: "http://localhost:9/v1 le lk",
-		`{"providers":{"lan":{"base":"http://localhost:9/v1","key_env":"LOCAL_KEY"}},"profiles":{"local":{"provider":"lan"}}}`:                    "none",
+		`{"providers":{"lan":{"base":"http://localhost:9/v1","key_env":"LOCAL_KEY"}},"profiles":{"local":{"models":["lan:m"],"embed_model":"le"}}}`: "http://localhost:9/v1 le lk",
+		`{"providers":{"lan":{"base":"http://localhost:9/v1","key_env":"LOCAL_KEY"}},"profiles":{"local":{"models":["lan:m"]}}}`:                    "none",
 	} {
 		h := newHarness(t, "", fake.Reply("ok"))
 		writeProfiles(t, h.dir, body)
@@ -211,7 +211,7 @@ func TestTokenRace(t *testing.T) {
 // Audit 18/11 (5): data after the configuration was accepted.
 func TestProfilesTrailingData(t *testing.T) {
 	h := newHarness(t, "", fake.Reply("ok"))
-	writeProfiles(t, h.dir, `{"profiles":{"w":{"model":"x"}}} {"garbage":true}`)
+	writeProfiles(t, h.dir, `{"profiles":{"w":{"models":["openai:x"]}}} {"garbage":true}`)
 	if code := h.run("--profile", "w", "--no-tools", "run", "hi"); code == 0 {
 		t.Fatal("trailing data accepted")
 	}

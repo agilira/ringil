@@ -90,6 +90,10 @@ var providerName = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
 
 // errGone says where base and key_env went (23/11: they became named
 // providers).
+func errModelsGone(where string) error {
+	return errors.New(ErrUsage, where+"model and provider are now one list, models: [provider:model, ...]: the first answers, the others in order when it does not (models: [anthropic:claude-opus-5-5]); see docs/ringil.example.yaml")
+}
+
 func errGone(where string) error {
 	return errors.New(ErrUsage, where+"base and key_env are gone: name a provider (provider: NAME, a built-in one or one of the providers section, with its base and key_env); see docs/ringil.example.yaml")
 }
@@ -100,9 +104,16 @@ func (f *config) checkGone() error {
 	if f.OldBase+f.OldKeyEnv != "" {
 		return errGone("")
 	}
+	if f.OldModel+f.OldProvider != "" {
+		return errModelsGone("")
+	}
 	for _, name := range names(f.Profiles) {
-		if p := f.Profiles[name]; p.OldBase+p.OldKeyEnv != "" {
+		p := f.Profiles[name]
+		if p.OldBase+p.OldKeyEnv != "" {
 			return errGone("profiles." + name + ": ")
+		}
+		if p.OldModel+p.OldProvider != "" {
+			return errModelsGone("profiles." + name + ": ")
 		}
 	}
 	for where, a := range map[string]audioConfig{"transcribe": f.Transcribe, "speech": f.Speech} {
@@ -122,11 +133,6 @@ func (f *config) checkProviders() error {
 			return err
 		}
 	}
-	if f.Provider != "" {
-		if _, err := f.endpointNamed(f.Provider); err != nil {
-			return err
-		}
-	}
 	for _, name := range names(f.Profiles) {
 		if err := f.checkRoleProvider(name, f.Profiles[name]); err != nil {
 			return err
@@ -142,13 +148,9 @@ func (f *config) checkProviders() error {
 
 func (f *config) checkRoleProvider(role string, p profile) error {
 	if p.EmbedModel != "" {
-		return f.checkOpenAIProvider("profile "+role+" (embed_model)", p.Provider)
+		return f.checkOpenAIProvider("profile "+role+" (embed_model)", p.provider())
 	}
-	if p.Provider == "" {
-		return nil
-	}
-	_, err := f.endpointNamed(p.Provider)
-	return err
+	return nil
 }
 
 // checkOpenAIProvider: name, when given, is an OpenAI-compatible provider
@@ -266,40 +268,28 @@ func builtinNames() string {
 	return out
 }
 
-// mainProviderName is the main model's provider: --provider,
-// RINGIL_PROVIDER, else ringil.yaml's provider.
-func (c *cli) mainProviderName(ctx *orpheus.Context, res secrets.Resolver) (string, error) {
-	name, err := c.providerSetting(ctx, res, "provider", "RINGIL_PROVIDER", c.conf().Provider)
-	if err == nil && name == "" {
-		err = errors.New(ErrUsage, "no provider: set provider in ringil.yaml (ringil setup), or --provider")
-	}
-	return name, err
-}
-
-// runEndpoint is the provider of the run's model: the role's, else the
-// main one.
+// runEndpoint is the provider of the run's main model: the role's, else
+// the main one.
 func (c *cli) runEndpoint(ctx *orpheus.Context, res secrets.Resolver) (endpoint, error) {
-	if c.role != nil && c.role.Provider != "" {
-		return c.conf().endpointNamed(c.role.Provider)
-	}
-	name, err := c.mainProviderName(ctx, res)
+	list, err := c.runModels(ctx, res)
 	if err != nil {
 		return endpoint{}, err
 	}
-	return c.conf().endpointNamed(name)
+	return c.conf().endpointNamed(list[0].provider)
 }
 
 // ownEndpoint: the role talks to another provider than the main one. Its
 // embedding model is then the role's own (memories go to no other
 // endpoint).
 func (c *cli) ownEndpoint(ctx *orpheus.Context, res secrets.Resolver) (bool, error) {
-	if c.role == nil || c.role.Provider == "" {
+	own, ok := c.roleModel()
+	if !ok {
 		return false, nil
 	}
-	main, err := c.providerSetting(ctx, res, "provider", "RINGIL_PROVIDER", c.conf().Provider)
-	// No main provider, or one the environment names under a store (refused
+	main, err := c.mainProviderName(ctx, res)
+	// No main model, or one the environment names under a store (refused
 	// where it is used): the role's is its own, and keeps its memories.
-	return err != nil || c.role.Provider != main, nil
+	return err != nil || own.provider != main, nil
 }
 
 // keepImages is how many of the latest messages send their images: all

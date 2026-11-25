@@ -62,7 +62,7 @@ func TestSetupWithAChatGPTSubscription(t *testing.T) {
 			t.Errorf("not said %q:\n%s", want, said)
 		}
 	}
-	yamlHas(t, h.dir, []string{"provider: chatgpt", "model: gpt-a", "store: file"}, []string{"base:", "key_env", "access_token", "acct-7"})
+	yamlHas(t, h.dir, []string{"- chatgpt:gpt-a", "store: file"}, []string{"base:", "key_env", "access_token", "acct-7"})
 	if v := storedSecret(t, h.dir, chatgptLogin); !strings.Contains(v, `"account_id":"acct-7"`) {
 		t.Fatalf("the sign-in in the store: %.40q", v)
 	}

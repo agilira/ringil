@@ -234,6 +234,7 @@ func (c *cli) app() *orpheus.App {
 		AddGlobalIntFlag("workflow-calls", "", 0, "most successful model calls one workflow may make, across resumes; 0 is no limit").
 		AddGlobalIntFlag("workflow-tokens", "", 0, "most tokens one workflow may use, across resumes; 0 is no limit").
 		AddGlobalFlag("workflow-cost", "", "", "most US dollars one workflow may spend, across resumes (5.00); empty is no limit").
+		AddGlobalFlag("models", "", "", "the models, in order, instead of ringil.yaml's: provider:model, comma-separated; the first answers, the others when it does not (anthropic:claude-opus-5-5,ollama:qwen3:8b)").
 		AddGlobalFlag("max-cost", "", "", "stop a prompt once its model calls have cost this many US dollars (0.50), and each worker's task the same; empty is no limit").
 		AddGlobalFlag("embed-model", "", "", "embedding model for memory by meaning (or RINGIL_EMBED_MODEL); same endpoint and key as the chat model").
 		AddGlobalFlag("config", "c", "", "the configuration (default: <config>/ringil/ringil.yaml): settings, profiles, MCP servers, remote agents, serve; the flags win over it").
@@ -882,18 +883,11 @@ func (c *cli) provider(ctx *orpheus.Context) (agent.Provider, error) {
 	if err != nil {
 		return nil, err
 	}
-	ep, err := c.runEndpoint(ctx, res)
+	list, err := c.runModels(ctx, res)
 	if err != nil {
 		return nil, err
 	}
-	model, err := c.roleSetting(ctx, res, "model", "RINGIL_MODEL")
-	if err != nil {
-		return nil, err
-	}
-	if model == "" {
-		return nil, errors.New(ErrUsage, "set --model, or model in ringil.yaml (ringil setup offers the list)")
-	}
-	return c.newModel(ctx, res, ep, model)
+	return c.chain(ctx, res, list)
 }
 
 // newModel is the provider for model at ep: Anthropic's API, ChatGPT's,

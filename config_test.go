@@ -29,8 +29,7 @@ import (
 )
 
 const fullConfig = `
-model: file-model
-provider: acme
+models: [acme:file-model]
 providers:
   acme: {base: "https://llm.acme.example/v1", key_env: ACME_KEY}
 instructions: company.md
@@ -170,7 +169,7 @@ func TestConfigRefused(t *testing.T) {
 		"bad replies":                  "serve:\n  replies: shout\n",
 		"webhooks without triggers":    "serve:\n  no_triggers: true\n  webhooks: 127.0.0.1:1\n",
 		"a bad new_after":              "serve:\n  new_after: soon\n",
-		"two documents":                "model: a\n---\nmodel: b\n",
+		"two documents":                "models: [openai:a]\n---\nmodels: [openai:b]\n",
 		"the old JSON of the profiles": `{"profiles":{"w":{"system":"x"}}}`,
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -194,7 +193,7 @@ func TestConfigFiles(t *testing.T) {
 		t.Error("a missing --config was accepted")
 	}
 	other := filepath.Join(t.TempDir(), "acme.yaml")
-	if err := os.WriteFile(other, []byte("model: acme-model\n"), 0o600); err != nil {
+	if err := os.WriteFile(other, []byte("models: [openai:acme-model]\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	h.c.settings = nil
@@ -219,7 +218,7 @@ func TestConfigFiles(t *testing.T) {
 func TestConfigReloads(t *testing.T) {
 	h := newHarness(t, "")
 	h.c.configEvery = 20 * time.Millisecond
-	path := writeConfig(t, h.dir, "model: one\nprofiles:\n  w: {model: a}\n")
+	path := writeConfig(t, h.dir, "models: [openai:one]\nprofiles:\n  w: {models: [openai:a]}\n")
 	loaded(t, h.c, nil, func(*orpheus.Context) error {
 		rewrite := func(body string) {
 			t.Helper()
@@ -227,26 +226,28 @@ func TestConfigReloads(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		rewrite("model: two\nprofiles:\n  w: {model: b}\n")
-		waitFor(t, func() bool { return h.c.conf().Model == "two" && h.c.conf().Profiles["w"].Model == "b" })
+		rewrite("models: [openai:two]\nprofiles:\n  w: {models: [openai:b]}\n")
+		waitFor(t, func() bool {
+			return fileModel(h.c.conf()) == "two" && fileModel(&config{Models: h.c.conf().Profiles["w"].Models}) == "b"
+		})
 
-		for _, bad := range []string{"model: three\nmodle: x\n", "model: three\ninstructions: missing.md\n"} {
+		for _, bad := range []string{"models: [openai:three]\nmodle: x\n", "models: [openai:three]\ninstructions: missing.md\n"} {
 			rewrite(bad)
 			waitFor(t, func() bool { return strings.Contains(h.c.errOutText(), "not applied") })
-			if h.c.conf().Model != "two" {
-				t.Fatalf("a refused edit was applied: %q", h.c.conf().Model)
+			if fileModel(h.c.conf()) != "two" {
+				t.Fatalf("a refused edit was applied: %q", fileModel(h.c.conf()))
 			}
 			h.c.resetErrOut()
 		}
 		if runtime.GOOS != "windows" {
-			rewrite("model: four\n")
-			waitFor(t, func() bool { return h.c.conf().Model == "four" })
+			rewrite("models: [openai:four]\n")
+			waitFor(t, func() bool { return fileModel(h.c.conf()) == "four" })
 			if err := os.Chmod(path, 0o666); err != nil {
 				t.Fatal(err)
 			}
-			rewrite("model: five\n")
+			rewrite("models: [openai:five]\n")
 			waitFor(t, func() bool { return strings.Contains(h.c.errOutText(), "not applied") })
-			if h.c.conf().Model != "four" {
+			if fileModel(h.c.conf()) != "four" {
 				t.Fatal("an edit to a file others can write was applied")
 			}
 		}
@@ -269,12 +270,12 @@ func waitFor(t *testing.T, ok func() bool) {
 func TestServedRoleIsReadAtEachRun(t *testing.T) {
 	h := newHarness(t, "")
 	h.c.settings = &settings{}
-	h.c.settings.current.Store(&config{Profiles: map[string]profile{"w": {Model: "a"}}})
-	if r, err := h.c.servedRole("w"); err != nil || r.Model != "a" {
+	h.c.settings.current.Store(&config{Profiles: map[string]profile{"w": {Models: []string{"openai:a"}}}})
+	if r, err := h.c.servedRole("w"); err != nil || fileModel(&config{Models: r.Models}) != "a" {
 		t.Fatalf("%+v %v", r, err)
 	}
-	h.c.settings.current.Store(&config{Profiles: map[string]profile{"w": {Model: "b"}}})
-	if r, err := h.c.servedRole("w"); err != nil || r.Model != "b" {
+	h.c.settings.current.Store(&config{Profiles: map[string]profile{"w": {Models: []string{"openai:b"}}}})
+	if r, err := h.c.servedRole("w"); err != nil || fileModel(&config{Models: r.Models}) != "b" {
 		t.Fatalf("the edit did not reach the run: %+v %v", r, err)
 	}
 	h.c.settings.current.Store(&config{})
@@ -287,11 +288,11 @@ func TestServedRoleIsReadAtEachRun(t *testing.T) {
 }
 
 func TestWhatNeedsARestart(t *testing.T) {
-	old := &config{Profiles: map[string]profile{"w": {}}, Serve: serveConfig{Listen: "a"}}
-	if got := restartFor(old, &config{Profiles: map[string]profile{"w": {Model: "x"}}, Serve: serveConfig{Listen: "a"}, Model: "m"}); got != "" {
+	old := &config{Profiles: map[string]profile{"w": {}}, Serve: serveConfig{Listen: "a"}, Models: []string{"openai:a"}}
+	if got := restartFor(old, &config{Profiles: map[string]profile{"w": {Models: []string{"openai:x"}}}, Serve: serveConfig{Listen: "a"}, Models: []string{"openai:m"}}); got != "" {
 		t.Errorf("an edit applied at once was told to need a restart: %q", got)
 	}
-	people := &config{Profiles: map[string]profile{"w": {}}, Serve: serveConfig{Listen: "a", MemberProfile: "w", Telegram: telegramConfig{Owners: []string{"1"}, Members: []string{"2"}}}}
+	people := &config{Profiles: map[string]profile{"w": {}}, Models: []string{"openai:a"}, Serve: serveConfig{Listen: "a", MemberProfile: "w", Telegram: telegramConfig{Owners: []string{"1"}, Members: []string{"2"}}}}
 	if got := restartFor(old, people); got != "" {
 		t.Errorf("who the chats talk with was told to need a restart: %q", got)
 	}
@@ -526,10 +527,10 @@ func TestNoAudit(t *testing.T) {
 // A run of serve reads one revision from start to end.
 func TestARunIsPinnedToARevision(t *testing.T) {
 	s := &settings{}
-	s.current.Store(&config{Model: "a", digest: "1"})
+	s.current.Store(&config{Models: []string{"openai:a"}, digest: "1"})
 	p := s.pinned()
-	s.current.Store(&config{Model: "b", digest: "2"})
-	if p.get().Model != "a" {
+	s.current.Store(&config{Models: []string{"openai:b"}, digest: "2"})
+	if fileModel(p.get()) != "a" {
 		t.Error("a pinned run saw the next revision")
 	}
 }

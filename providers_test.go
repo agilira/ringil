@@ -99,8 +99,8 @@ func TestManyCompatibleProviders(t *testing.T) {
 		"glm": "https://api.z.ai/api/paas/v4 glm z", "other": "https://b.test/v1 x b"} {
 		h := newHarness(t, "", fake.Reply("ok"))
 		env(h, map[string]string{"A_KEY": "a", "B_KEY": "b", "DEEPSEEK_API_KEY": "ds", "ZAI_API_KEY": "z"})
-		writeProfiles(t, h.dir, `{"provider":"a","model":"m","providers":{"a":{"base":"https://a.test/v1","key_env":"A_KEY"},"b":{"base":"https://b.test/v1","key_env":"B_KEY"}},
-			"profiles":{"coder":{"provider":"deepseek","model":"deepseek-chat"},"glm":{"provider":"zai","model":"glm"},"other":{"provider":"b","model":"x"}}}`)
+		writeProfiles(t, h.dir, `{"models":["a:m"],"providers":{"a":{"base":"https://a.test/v1","key_env":"A_KEY"},"b":{"base":"https://b.test/v1","key_env":"B_KEY"}},
+			"profiles":{"coder":{"models":["deepseek:deepseek-chat"]},"glm":{"models":["zai:glm"]},"other":{"models":["b:x"]}}}`)
 		args := []string{"--no-tools", "run", "hi"}
 		if role != "" {
 			args = append([]string{"--profile", role}, args...)
@@ -118,9 +118,9 @@ func TestManyCompatibleProviders(t *testing.T) {
 // key, never the main ones.
 func TestAnthropicRole(t *testing.T) {
 	for body, want := range map[string]string{
-		`{"profiles":{"claude":{"provider":"anthropic","model":"claude-haiku-5-5"}}}`:                                                                        " claude-haiku-5-5 sk-ant",
-		`{"providers":{"team":{"kind":"anthropic","key_env":"TEAM_KEY"}},"profiles":{"claude":{"provider":"team","model":"claude-haiku-5-5"}}}`:              " claude-haiku-5-5 team",
-		`{"providers":{"gw":{"kind":"anthropic","base":"https://gw.example.com","key_env":"TEAM_KEY"}},"profiles":{"claude":{"provider":"gw","model":"c"}}}`: "https://gw.example.com c team",
+		`{"profiles":{"claude":{"models":["anthropic:claude-haiku-5-5"]}}}`:                                                                        " claude-haiku-5-5 sk-ant",
+		`{"providers":{"team":{"kind":"anthropic","key_env":"TEAM_KEY"}},"profiles":{"claude":{"models":["team:claude-haiku-5-5"]}}}`:              " claude-haiku-5-5 team",
+		`{"providers":{"gw":{"kind":"anthropic","base":"https://gw.example.com","key_env":"TEAM_KEY"}},"profiles":{"claude":{"models":["gw:c"]}}}`: "https://gw.example.com c team",
 	} {
 		h := newHarness(t, "", fake.Reply("ok"))
 		cfg, key := claude(h)
@@ -139,7 +139,7 @@ func TestAnthropicRole(t *testing.T) {
 // A role on the main provider stays on the main endpoint and key.
 func TestRoleOnTheMainProvider(t *testing.T) {
 	h := newHarness(t, "", fake.Reply("ok"))
-	writeProfiles(t, h.dir, `{"profiles":{"same":{"provider":"openai","model":"other"}}}`)
+	writeProfiles(t, h.dir, `{"profiles":{"same":{"models":["openai:other"]}}}`)
 	if code := h.run("--profile", "same", "--no-tools", "run", "hi"); code != exitOK {
 		t.Fatalf("exit %d: %s", code, h.err)
 	}
@@ -150,10 +150,10 @@ func TestRoleOnTheMainProvider(t *testing.T) {
 
 func TestProvidersChecked(t *testing.T) {
 	for body, want := range map[string]string{
-		`{"provider":"gemini"}`:                                                              "no provider gemini",
-		`{"profiles":{"x":{"provider":"cohere"}}}`:                                           "no provider cohere",
-		`{"profiles":{"x":{"provider":"anthropic","embed_model":"e"}}}`:                      "anthropic speaks anthropic, which has no embedding",
-		`{"profiles":{"x":{"provider":"chatgpt","embed_model":"e"}}}`:                        "chatgpt speaks chatgpt, which has no embedding",
+		`{"models":["gemini:m"]}`:                                                            "no provider gemini",
+		`{"profiles":{"x":{"models":["cohere:m"]}}}`:                                         "no provider cohere",
+		`{"profiles":{"x":{"models":["anthropic:m"],"embed_model":"e"}}}`:                    "anthropic speaks anthropic, which has no embedding",
+		`{"profiles":{"x":{"models":["chatgpt:m"],"embed_model":"e"}}}`:                      "chatgpt speaks chatgpt, which has no embedding",
 		`{"base":"https://x.test/v1"}`:                                                       "base and key_env are gone: name a provider",
 		`{"profiles":{"x":{"key_env":"K"}}}`:                                                 "profiles.x: base and key_env are gone",
 		`{"speech":{"model":"t","base":"https://x.test/v1"}}`:                                "speech: base and key_env are gone",
@@ -198,7 +198,7 @@ func TestAnthropicIgnoresTheOtherEndpointsEmbedModel(t *testing.T) {
 func TestRoleWithoutAMainProvider(t *testing.T) {
 	h := newHarness(t, "", fake.Reply("ok"))
 	env(h, map[string]string{"LAN_KEY": "lk"})
-	writeProfiles(t, h.dir, `{"providers":{"lan":{"base":"http://localhost:9/v1","key_env":"LAN_KEY"}},"profiles":{"local":{"provider":"lan","model":"x"}}}`)
+	writeProfiles(t, h.dir, `{"providers":{"lan":{"base":"http://localhost:9/v1","key_env":"LAN_KEY"}},"profiles":{"local":{"models":["lan:x"]}}}`)
 	if code := h.run("--profile", "local", "--no-tools", "run", "hi"); code != exitOK || h.config.BaseURL != "http://localhost:9/v1" || h.key(t) != "lk" {
 		t.Fatalf("exit %d, %+v: %s", code, h.config, h.err)
 	}
@@ -210,10 +210,10 @@ func TestAudioKeysGoToTheirProviders(t *testing.T) {
 	for _, tc := range []struct {
 		body, envProvider, want string
 	}{
-		{`{"provider":"a","providers":{"a":{"base":"https://a.test/v1","key_env":"A_KEY"}},"speech":{"model":"tts"}}`, "", "https://a.test/v1 tts a"},
-		{`{"provider":"a","providers":{"a":{"base":"https://a.test/v1","key_env":"A_KEY"}},"speech":{"model":"tts","provider":"openai"}}`, "", "https://api.openai.com/v1 tts oai"},
-		{`{"provider":"a","providers":{"a":{"base":"https://a.test/v1","key_env":"A_KEY"}},"speech":{"model":"tts"}}`, "openai", "https://api.openai.com/v1 tts oai"},
-		{`{"provider":"anthropic","speech":{"model":"tts","provider":"openai"}}`, "", "https://api.openai.com/v1 tts oai"},
+		{`{"models":["a:m"],"providers":{"a":{"base":"https://a.test/v1","key_env":"A_KEY"}},"speech":{"model":"tts"}}`, "", "https://a.test/v1 tts a"},
+		{`{"models":["a:m"],"providers":{"a":{"base":"https://a.test/v1","key_env":"A_KEY"}},"speech":{"model":"tts","provider":"openai"}}`, "", "https://api.openai.com/v1 tts oai"},
+		{`{"models":["a:m"],"providers":{"a":{"base":"https://a.test/v1","key_env":"A_KEY"}},"speech":{"model":"tts"}}`, "openai", "https://api.openai.com/v1 tts oai"},
+		{`{"models":["anthropic:m"],"speech":{"model":"tts","provider":"openai"}}`, "", "https://api.openai.com/v1 tts oai"},
 	} {
 		h := newHarness(t, "")
 		env(h, map[string]string{"A_KEY": "a", "OPENAI_API_KEY": "oai", "ANTHROPIC_API_KEY": "ant", "RINGIL_SPEECH_PROVIDER": tc.envProvider})
@@ -236,7 +236,7 @@ func TestAudioKeysGoToTheirProviders(t *testing.T) {
 	}
 	h := newHarness(t, "")
 	env(h, map[string]string{"ANTHROPIC_API_KEY": "ant"})
-	writeProfiles(t, h.dir, `{"provider":"anthropic","speech":{"model":"tts"}}`)
+	writeProfiles(t, h.dir, `{"models":["anthropic:m"],"speech":{"model":"tts"}}`)
 	loaded(t, h.c, nil, func(ctx *orpheus.Context) error {
 		res, _ := h.c.resolver(ctx)
 		if _, err := h.c.audioConfig(ctx, res, "RINGIL_SPEECH", h.c.conf().Speech); err == nil {

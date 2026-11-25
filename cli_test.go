@@ -125,7 +125,7 @@ func TestRunErrors(t *testing.T) {
 	}
 	h = newHarness(t, "")
 	h.c.getenv = func(string) string { return "" }
-	if code := h.run("run", "x"); code != exitError || !strings.Contains(h.err.String(), "no provider") {
+	if code := h.run("run", "x"); code != exitError || !strings.Contains(h.err.String(), "no model") {
 		t.Fatalf("missing config: %d %q", code, h.err)
 	}
 	h = newHarness(t, "")

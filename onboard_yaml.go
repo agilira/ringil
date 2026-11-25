@@ -55,6 +55,8 @@ func (s *setup) answer(w *argus.ConfigWriter) error {
 	for _, kv := range s.settings() {
 		e.set(kv.key, kv.value)
 	}
+	// The model chosen goes first; the others stay after it, in their order.
+	e.set("models", withFirst(stringsOf(w.GetValue("models")), modelRef{s.endpoint.name, s.model}.String()))
 	s.mergeSections(e)
 	if len(s.owners) > 0 {
 		e.set("serve.telegram.owners", union(stringsOf(w.GetValue("serve.telegram.owners")), s.owners))
@@ -71,14 +73,28 @@ func (s *setup) answer(w *argus.ConfigWriter) error {
 func leftovers(w *argus.ConfigWriter) error {
 	profiles, _ := w.GetValue("profiles").(map[string]interface{})
 	for _, name := range slices.Sorted(maps.Keys(profiles)) {
-		if p, ok := profiles[name].(map[string]interface{}); ok && (p["base"] != nil || p["key_env"] != nil) {
-			return errGone("profiles." + name + ": ")
+		if p, ok := profiles[name].(map[string]interface{}); ok {
+			if err := profileLeftovers(name, p); err != nil {
+				return err
+			}
 		}
 	}
 	for _, where := range []string{"transcribe", "speech"} {
 		if w.GetValue(where+".base") != nil || w.GetValue(where+".key_env") != nil {
 			return errGone(where + ": ")
 		}
+	}
+	return nil
+}
+
+// profileLeftovers: a profile's settings of before named providers or
+// the models list.
+func profileLeftovers(name string, p map[string]interface{}) error {
+	switch {
+	case p["base"] != nil || p["key_env"] != nil:
+		return errGone("profiles." + name + ": ")
+	case p["model"] != nil || p["provider"] != nil:
+		return errModelsGone("profiles." + name + ": ")
 	}
 	return nil
 }
@@ -123,10 +139,10 @@ type keyValue struct {
 // another address than its own.
 func (s *setup) settings() []keyValue {
 	kv := []keyValue{
-		{"provider", s.endpoint.name},
+		{"provider", ""}, // of before the list: models holds them now
+		{"model", ""},
 		{"base", ""}, // the endpoint is the provider's: none beside it
 		{"key_env", ""},
-		{"model", s.model},
 		{"instructions", s.prompt},
 		{"embed_model", s.embedModel},
 	}
@@ -199,6 +215,11 @@ func stringsOf(v interface{}) []string {
 		}
 	}
 	return out
+}
+
+// withFirst is list with entry first, and once.
+func withFirst(list []string, entry string) []string {
+	return append([]string{entry}, slices.DeleteFunc(slices.Clone(list), func(e string) bool { return e == entry })...)
 }
 
 func union(a, b []string) []string {

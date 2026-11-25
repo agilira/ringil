@@ -6,8 +6,9 @@
 // Command ringil runs an agent built on ringil-agent-sdk from the terminal:
 // an interactive chat, or a single prompt with "ringil run".
 //
-// The model's provider is chosen by name (--provider, RINGIL_PROVIDER or
-// ringil.yaml): a built-in one, or one of ringil.yaml's providers.
+// The models are an ordered list of provider:model (models: in
+// ringil.yaml, --models): the first answers, the others when it does not.
+// A provider is named: a built-in one, or one of ringil.yaml's providers.
 package main
 
 import (

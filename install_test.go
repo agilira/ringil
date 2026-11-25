@@ -53,7 +53,7 @@ func addHarness(t *testing.T, fn func(c *cli, path string)) {
 	t.Helper()
 	h := newHarness(t, "")
 	env(h, map[string]string{})
-	path := writeConfig(t, h.dir, "model: m\nmcp_servers:\n  old:\n    command: srv\n")
+	path := writeConfig(t, h.dir, "models: [openai:m]\nmcp_servers:\n  old:\n    command: srv\n")
 	loaded(t, h.c, nil, func(*orpheus.Context) error {
 		fn(h.c, path)
 		return nil

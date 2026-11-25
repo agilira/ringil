@@ -30,6 +30,22 @@ modelli su questa macchina e l'abbonamento ChatGPT costano zero. `prices:` in ri
 aggiunge o corregge un modello. `--max-cost` e `--workflow-cost` su un modello senza prezzo
 sono rifiutati, perché non fermerebbero nulla.
 
+I modelli sono una lista ordinata, `models:` in ringil.yaml (o `--models`), di
+`provider:modello`: il primo risponde, gli altri nell'ordine quando non risponde (server
+giù, troppe richieste, risposta interrotta o rotta, chiave rifiutata). Si passa al successivo
+subito; il caduto si salta per un minuto (che raddoppia se ricade) e poi si torna a lui. Una
+richiesta rifiutata per sé (troppo lunga, non valida) non va a un altro. Con un modello solo
+non cambia nulla; un modello senza la sua chiave è lasciato fuori. La conversazione va solo
+ai provider della lista; un profilo con i suoi `models:` usa solo quelli. `--provider` e
+`--model` mettono un altro modello primo, con la lista dopo di lui.
+
+```yaml
+models:
+  - anthropic:claude-opus-5-5
+  - openrouter:anthropic/claude-sonnet-5.5
+  - ollama:qwen3:8b
+```
+
 ### ringil.yaml
 
 Tutta la configurazione sta in un file, `<config>/ringil/ringil.yaml` (o `--config`):
@@ -40,7 +56,7 @@ non ci stanno mai: `key_env` e `${NOME}` dicono quale variabile li contiene. Il 
 dev'essere tuo e non scrivibile da altri; i percorsi relativi delle istruzioni e di
 `sessions_dir` partono dalla sua cartella. Esempio completo: `docs/ringil.example.yaml`.
 
-Il modello si sceglie per nome del provider (`provider:`, `--provider`, `RINGIL_PROVIDER`).
+Il provider di ogni modello si nomina prima dei due punti (`anthropic:…`, `--provider`, `RINGIL_PROVIDER`).
 Pronti senza configurazione, con il segreto della chiave: `anthropic` (`ANTHROPIC_API_KEY`),
 `chatgpt` (abbonamento, `ringil login chatgpt`), `openai` (`OPENAI_API_KEY`), `google`
 (Gemini, `GEMINI_API_KEY`), `openrouter`, `nvidia` (NIM), `deepseek`, `requesty`, `zai`,

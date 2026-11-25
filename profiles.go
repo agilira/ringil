@@ -25,10 +25,12 @@ import (
 // Empty fields keep the flag or environment value.
 type profile struct {
 	Description string `argus:"description"`
-	Model       string `argus:"model"`
-	// Provider is the role's model's provider, by name, when not the
-	// main one: its own endpoint, its own key.
-	Provider string `argus:"provider"`
+	// Models are the role's own, provider:model in order (models.go);
+	// none, the main ones. A role with its own uses no other.
+	Models []string `argus:"models"`
+	// OldModel and OldProvider: as config's.
+	OldModel    string `argus:"model"`
+	OldProvider string `argus:"provider"`
 	// OldBase and OldKeyEnv: as config's.
 	OldBase   string `argus:"base"`
 	OldKeyEnv string `argus:"key_env"`
@@ -75,8 +77,8 @@ func (p profile) check(name string) error {
 	switch {
 	case !profileName.MatchString(name) || name == "default":
 		return errors.New(ErrUsage, "profile names are 1-64 letters, digits, - _, and not \"default\": "+name)
-	case p.Provider == "" && p.EmbedModel != "":
-		return errors.New(ErrUsage, "profile "+name+": embed_model needs the role's own provider")
+	case len(p.Models) == 0 && p.EmbedModel != "":
+		return errors.New(ErrUsage, "profile "+name+": embed_model needs the role's own models")
 	}
 	return p.checkLimits(name)
 }
@@ -180,13 +182,6 @@ func names(all map[string]profile) []string {
 
 // Overrides of the role, when there is one.
 
-func (c *cli) roleSetting(ctx *orpheus.Context, res secrets.Resolver, flag, env string) (string, error) {
-	if c.role != nil && flag == "model" && c.role.Model != "" {
-		return c.role.Model, nil
-	}
-	return c.setting(ctx, res, flag, env)
-}
-
 // embedModel is the embedding model to use: the role's at the role's own
 // endpoint, else the main setting.
 func (c *cli) embedModel(ctx *orpheus.Context, res secrets.Resolver) (string, error) {
@@ -261,9 +256,23 @@ func (c *cli) maxTurns(ctx *orpheus.Context) int {
 // with its own model, else RINGIL_IMAGES=1 (environment or --env-file) or
 // images in ringil.yaml.
 func (c *cli) images(ctx context.Context, res secrets.Resolver) bool {
-	if c.role != nil && c.role.Model != "" {
+	if _, ok := c.roleModel(); ok {
 		return c.role.Images
 	}
 	v, _, err := secrets.Lookup(ctx, settingsOf(res), "RINGIL_IMAGES")
 	return (err == nil && v == "1") || c.conf().Images
+}
+
+// roleModel is the main model of a role with its own models.
+func (c *cli) roleModel() (modelRef, bool) {
+	if c.role == nil {
+		return modelRef{}, false
+	}
+	return first(c.role.Models)
+}
+
+// provider is the role's own main provider, "" for none.
+func (p profile) provider() string {
+	m, _ := first(p.Models)
+	return m.provider
 }
