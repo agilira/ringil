@@ -261,11 +261,18 @@ var hidden = map[rune]bool{
 // done prints the turn's cost, workers included.
 func (c *cli) done(ev agent.Event) error {
 	u := ev.Result.Usage
+	cost := ""
+	if u.Cost > 0 {
+		cost = ", " + usd(u.Cost)
+	}
 	workers := ""
 	if in, out := c.workerIn.Swap(0), c.workerOut.Swap(0); in+out > 0 {
 		workers = fmt.Sprintf("; workers %d in / %d out", in, out)
+		if wc := c.workerCost.Swap(0); wc > 0 {
+			workers += ", " + usd(float64(wc)/1e9)
+		}
 	}
-	return c.line(fmt.Sprintf("\n  [%s, %d model calls, %d in / %d out tokens%s]", ev.Stop, ev.Result.Turns, u.Input, u.Output, workers))
+	return c.line(fmt.Sprintf("\n  [%s, %d model calls, %d in / %d out tokens%s%s]", ev.Stop, ev.Result.Turns, u.Input, u.Output, cost, workers))
 }
 
 func (c *cli) toolEnd(ev agent.Event) error {

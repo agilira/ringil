@@ -71,6 +71,8 @@ func TestBuiltinAndOwnProviders(t *testing.T) {
 	for name, want := range map[string]endpoint{
 		"google":   {"google", providerOpenAI, "https://generativelanguage.googleapis.com/v1beta/openai", "GEMINI_API_KEY"},
 		"moonshot": {"moonshot", providerOpenAI, "https://api.moonshot.ai/v1", "MOONSHOT_API_KEY"},
+		"xai":      {"xai", providerOpenAI, "https://api.x.ai/v1", "XAI_API_KEY"},
+		"mistral":  {"mistral", providerOpenAI, "https://api.mistral.ai/v1", "MISTRAL_API_KEY"},
 		"ollama":   {"ollama", providerOpenAI, ollamaBase, ""},
 		"chatgpt":  {"chatgpt", providerChatGPT, "", ""},
 		"vllm":     {"vllm", providerOpenAI, "https://vllm.lan/v1", "VLLM_KEY"},

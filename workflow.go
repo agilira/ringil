@@ -61,17 +61,29 @@ func (c *cli) workflowDir() (string, error) {
 // workflowTool lets the agent run plans it writes, journaled so that an
 // interrupted one can be resumed with `ringil workflow resume`.
 func (c *cli) workflowTool(ctx *orpheus.Context) (agent.Tool, error) {
+	r, err := c.budgetedRunner(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return r.Tool(), nil
+}
+
+// budgetedRunner is the runner with the budget of the settings.
+func (c *cli) budgetedRunner(ctx *orpheus.Context) (*workflow.Runner, error) {
 	r, err := c.runner()
 	if err != nil {
 		return nil, err
 	}
-	r.Budget = c.workflowBudget(ctx)
-	return r.Tool(), nil
+	if r.Budget, err = c.workflowBudget(ctx); err != nil {
+		return nil, err
+	}
+	return r, c.checkLimits("workflow-cost", r.Budget.Cost)
 }
 
 // workflowBudget: what one workflow may spend in total, across resumes.
-func (c *cli) workflowBudget(ctx *orpheus.Context) workflow.Budget {
-	return workflow.Budget{Calls: max(0, c.flagInt(ctx, "workflow-calls")), Tokens: max(0, c.flagInt(ctx, "workflow-tokens"))}
+func (c *cli) workflowBudget(ctx *orpheus.Context) (workflow.Budget, error) {
+	usd, err := c.flagDollars(ctx, "workflow-cost")
+	return workflow.Budget{Calls: max(0, c.flagInt(ctx, "workflow-calls")), Tokens: max(0, c.flagInt(ctx, "workflow-tokens")), Cost: usd}, err
 }
 
 func (c *cli) runner() (*workflow.Runner, error) {
@@ -159,6 +171,9 @@ func summary(st *workflow.State) string {
 	}
 	text := strconv.Itoa(done) + "/" + strconv.Itoa(len(st.Plan.Steps)) + " steps done, " +
 		strconv.Itoa(st.Spent.Calls) + " model calls, " + strconv.Itoa(st.Spent.Usage.Input+st.Spent.Usage.Output) + " tokens"
+	if st.Spent.Usage.Cost > 0 {
+		text += ", " + usd(st.Spent.Usage.Cost)
+	}
 	if pending > 0 {
 		text += ", " + strconv.Itoa(pending) + " uncertain (see: ringil workflow resolve)"
 	}
@@ -186,11 +201,10 @@ func (c *cli) cmdWorkflowResume(ctx *orpheus.Context) error {
 	if err != nil || st == nil {
 		return errors.New(ErrUsage, "no workflow "+id)
 	}
-	r, err := c.runner()
+	r, err := c.budgetedRunner(ctx)
 	if err != nil {
 		return err
 	}
-	r.Budget = c.workflowBudget(ctx)
 	res, err := r.Run(ctx.Context(), id, st.Plan, st.Brief, true)
 	if err != nil {
 		return err

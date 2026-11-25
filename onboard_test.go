@@ -84,7 +84,7 @@ func TestSetupFromNothing(t *testing.T) {
 	}
 	h, bot := setupHarness(t, []string{
 		"2", "frase lunga davvero", "frase lunga davvero", // an encrypted file
-		"5", "7", base, "y", // another OpenAI-compatible server, which needs a key
+		"5", "9", base, "y", // another OpenAI-compatible server, which needs a key
 		"wrong", "good", // a refused key, then the right one
 		"1",                   // the first model listed (newest name first: model-b)
 		prompt, "1", "1", "y", // the system prompt, no embedding model, SQLite, a Telegram bot
@@ -153,7 +153,7 @@ func TestSetupKeepsTheRest(t *testing.T) {
 // then the chat starts with what it wrote.
 func TestFirstRunOffersTheSetup(t *testing.T) {
 	base := modelServer(t)
-	h, _ := setupHarness(t, []string{"y", "2", "frase lunga davvero", "frase lunga davvero", "5", "7", base, "y", "good", "1", "", "1", "1", "n", "n", "/exit"},
+	h, _ := setupHarness(t, []string{"y", "2", "frase lunga davvero", "frase lunga davvero", "5", "9", base, "y", "good", "1", "", "1", "1", "n", "n", "/exit"},
 		map[string]string{}) // the passphrase is not in the environment: the chat goes on with the setup's (audit 22/11)
 	h.c.interactive = func() bool { return true }
 	if code := h.run(); code != exitOK {
@@ -175,7 +175,7 @@ func TestSetupEmbeddingModels(t *testing.T) {
 		_, _ = io.WriteString(w, `{"data":[{"id":"chat-model"},{"id":"text-embedding-3-small"}]}`)
 	}))
 	t.Cleanup(srv.Close)
-	h, _ := setupHarness(t, []string{"2", "frase lunga davvero", "frase lunga davvero", "5", "7", srv.URL + "/v1", "y", "k", "1", "",
+	h, _ := setupHarness(t, []string{"2", "frase lunga davvero", "frase lunga davvero", "5", "9", srv.URL + "/v1", "y", "k", "1", "",
 		"3", "1", // a model of the same server: the one listed with "embed"
 		"3", "http://127.0.0.1:8000", "n"}, map[string]string{}) // Chroma, now offered
 	if code := h.run("setup"); code != exitOK {
@@ -217,12 +217,12 @@ func TestSetupServersAndKeys(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNotFound) }))
 	t.Cleanup(srv.Close)
 	// No key: none is asked, none kept.
-	h, _ := setupHarness(t, []string{"2", "frase lunga davvero", "frase lunga davvero", "5", "7", srv.URL + "/v1", "n", "m", "", "1", "1", "n"}, map[string]string{})
+	h, _ := setupHarness(t, []string{"2", "frase lunga davvero", "frase lunga davvero", "5", "9", srv.URL + "/v1", "n", "m", "", "1", "1", "n"}, map[string]string{})
 	if code := h.run("setup"); code != exitOK || strings.Contains(h.err.String(), "API key (not shown") {
 		t.Fatalf("exit %d: %s", code, h.err)
 	}
 	// Plain http to another host: refused, then allowed (allow_http).
-	h, _ = setupHarness(t, []string{"2", "frase lunga davvero", "frase lunga davvero", "5", "7",
+	h, _ = setupHarness(t, []string{"2", "frase lunga davvero", "frase lunga davvero", "5", "9",
 		"http://ringil-test.invalid:8000/v1", "n", "http://ringil-test.invalid:8000/v1", "y", "n", "m", "", "1", "1", "n"}, map[string]string{})
 	h.run("setup")
 	data, _ := os.ReadFile(filepath.Join(h.dir, "ringil", "ringil.yaml"))
@@ -230,7 +230,7 @@ func TestSetupServersAndKeys(t *testing.T) {
 		t.Fatalf("%s\n%s", h.err, data)
 	}
 	// A key the server cannot check (404): asked whether to keep it.
-	h, _ = setupHarness(t, []string{"2", "frase lunga davvero", "frase lunga davvero", "5", "7", srv.URL + "/v1", "y", "k", "y", "m", "", "1", "1", "n"}, map[string]string{})
+	h, _ = setupHarness(t, []string{"2", "frase lunga davvero", "frase lunga davvero", "5", "9", srv.URL + "/v1", "y", "k", "y", "m", "", "1", "1", "n"}, map[string]string{})
 	if code := h.run("setup"); code != exitOK || !strings.Contains(h.err.String(), "could not be checked") {
 		t.Fatalf("exit %d: %s", code, h.err)
 	}
@@ -538,7 +538,7 @@ func TestSetupNamesAndOverrides(t *testing.T) {
 // stopped the first run. The setup names it, and the run does not start.
 func TestSetupNamesKeysInTheEnvironment(t *testing.T) {
 	base := modelServer(t)
-	h, _ := setupHarness(t, []string{"y", "2", "frase lunga davvero", "frase lunga davvero", "5", "7", base, "y", "good", "1", "", "1", "1", "n", "n", "hello", "/exit"},
+	h, _ := setupHarness(t, []string{"y", "2", "frase lunga davvero", "frase lunga davvero", "5", "9", base, "y", "good", "1", "", "1", "1", "n", "n", "hello", "/exit"},
 		map[string]string{keyNameOf(serverName(base)): "exported"}) // "hello": a chat that started would ask the model
 	h.c.interactive = func() bool { return true }
 	// A run that went on would stop at the key, in both places.

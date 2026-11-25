@@ -48,6 +48,7 @@ func newHarness(t *testing.T, input string, steps ...fake.Step) *harness {
 		return h.script, nil
 	}
 	h.c.turnContext = func(ctx context.Context) (context.Context, context.CancelFunc) { return context.WithCancel(ctx) }
+	h.c.prices = testPrices // never the network
 	h.c.configDir = func() (string, error) { return h.dir, nil }
 	h.c.dataDir = func() (string, error) { return filepath.Join(h.dir, "data"), nil }
 	h.c.home = func() (string, error) { return "", os.ErrNotExist }

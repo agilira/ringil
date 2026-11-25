@@ -36,6 +36,7 @@ import (
 	"github.com/agilira/ringil-agent-sdk/memory"
 	"github.com/agilira/ringil-agent-sdk/metrics"
 	"github.com/agilira/ringil-agent-sdk/notes"
+	"github.com/agilira/ringil-agent-sdk/price"
 	"github.com/agilira/ringil-agent-sdk/provider/anthropic"
 	"github.com/agilira/ringil-agent-sdk/provider/chatgpt"
 	"github.com/agilira/ringil-agent-sdk/provider/openai"
@@ -97,8 +98,17 @@ type cli struct {
 	askMu sync.Mutex
 	// outMu keeps lines whole when workers print at once.
 	outMu sync.Mutex
-	// workerIn and workerOut add up the workers' tokens of a turn.
-	workerIn, workerOut atomic.Int64
+	// workerIn and workerOut add up the workers' tokens of a turn, and
+	// workerCost their cost in billionths of a dollar.
+	workerIn, workerOut, workerCost atomic.Int64
+	// maxCost is the dollars a prompt, and a worker's task, may cost.
+	maxCost float64
+	// unpriced is the run's model when it has no price.
+	unpriced string
+	// prices is the price list (priceList; tests swap it), priceWarned
+	// whether its failure was said.
+	prices      func(context.Context) (price.Table, error)
+	priceWarned atomic.Bool
 	// learned are the rules the user's "always" added, by asker (the
 	// parent "", a worker by name).
 	learned   map[string][]agent.Rule
@@ -220,9 +230,11 @@ func (c *cli) app() *orpheus.App {
 		SetDescription("Run an AI agent from the terminal").
 		SetVersion(version).
 		AddGlobalFlag("model", "m", "", "model name (default: $RINGIL_MODEL)").
-		AddGlobalFlag("provider", "", "", "the model's provider, by name: a built-in one (anthropic, chatgpt, openai, google, openrouter, nvidia, deepseek, requesty, zai, moonshot, ollama) or one of ringil.yaml's providers (or RINGIL_PROVIDER)").
+		AddGlobalFlag("provider", "", "", "the model's provider, by name: a built-in one (anthropic, chatgpt, openai, google, openrouter, nvidia, deepseek, requesty, zai, moonshot, xai, mistral, ollama) or one of ringil.yaml's providers (or RINGIL_PROVIDER)").
 		AddGlobalIntFlag("workflow-calls", "", 0, "most successful model calls one workflow may make, across resumes; 0 is no limit").
 		AddGlobalIntFlag("workflow-tokens", "", 0, "most tokens one workflow may use, across resumes; 0 is no limit").
+		AddGlobalFlag("workflow-cost", "", "", "most US dollars one workflow may spend, across resumes (5.00); empty is no limit").
+		AddGlobalFlag("max-cost", "", "", "stop a prompt once its model calls have cost this many US dollars (0.50), and each worker's task the same; empty is no limit").
 		AddGlobalFlag("embed-model", "", "", "embedding model for memory by meaning (or RINGIL_EMBED_MODEL); same endpoint and key as the chat model").
 		AddGlobalFlag("config", "c", "", "the configuration (default: <config>/ringil/ringil.yaml): settings, profiles, MCP servers, remote agents, serve; the flags win over it").
 		AddGlobalFlag("env-file", "e", "", "private env file (mode 600) read for settings and secrets; the environment wins over it, and a key in the secrets store must be in neither").
@@ -324,7 +336,7 @@ func (c *cli) agent(ctx *orpheus.Context) (agent.Agent, error) {
 	if err := c.chooseProfile(ctx); err != nil {
 		return nil, err
 	}
-	p, err := c.provider(ctx)
+	p, err := c.runModel(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -359,6 +371,7 @@ func (c *cli) agent(ctx *orpheus.Context) (agent.Agent, error) {
 		Instructions:  instructions,
 		Context:       c.runContext(nb, !c.restricted()),
 		MaxTurns:      c.maxTurns(ctx),
+		MaxCost:       c.maxCost,
 		ContextWindow: c.flagInt(ctx, "context-window"),
 		Compaction:    agent.Compaction{Summarize: c.flagBool(ctx, "summarize")},
 		KeepImages:    c.keepImages(ctx),
@@ -888,17 +901,30 @@ func (c *cli) provider(ctx *orpheus.Context) (agent.Provider, error) {
 func (c *cli) newModel(ctx *orpheus.Context, res secrets.Resolver, ep endpoint, model string) (agent.Provider, error) {
 	switch ep.kind {
 	case providerChatGPT:
-		return c.newChatGPT(ctx, model, ep.base)
+		p, err := c.newChatGPT(ctx, model, ep.base)
+		if err != nil {
+			return nil, err
+		}
+		return c.priced(ctx.Context(), p, ep, model), nil
 	case providerAnthropic:
-		return c.newAnthropic(anthropic.Config{BaseURL: ep.base, Model: model, KeyFunc: keyFunc(res, ep.keyName), AllowHTTP: c.flagBool(ctx, "allow-http")})
+		p, err := c.newAnthropic(anthropic.Config{BaseURL: ep.base, Model: model, KeyFunc: keyFunc(res, ep.keyName), AllowHTTP: c.flagBool(ctx, "allow-http")})
+		if err != nil {
+			return nil, err
+		}
+		return c.priced(ctx.Context(), p, ep, model), nil
 	}
-	return c.newProvider(openai.Config{
-		BaseURL:   ep.base,
-		Model:     model,
-		KeyFunc:   keyFunc(res, ep.keyName),
-		AllowHTTP: c.flagBool(ctx, "allow-http"),
-		Images:    c.images(ctx.Context(), res),
+	p, err := c.newProvider(openai.Config{
+		BaseURL:    ep.base,
+		Model:      model,
+		KeyFunc:    keyFunc(res, ep.keyName),
+		AllowHTTP:  c.flagBool(ctx, "allow-http"),
+		Images:     c.images(ctx.Context(), res),
+		StatesCost: statesCost(ep.base),
 	})
+	if err != nil {
+		return nil, err
+	}
+	return c.priced(ctx.Context(), p, ep, model), nil
 }
 
 // keyFunc reads a provider's key from name; nil, no key, for "". With a

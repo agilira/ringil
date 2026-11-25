@@ -19,8 +19,16 @@ make chat                                   # chat con le chiavi di ENV_FILE (de
 ./ringil sandbox --mount ~/dati -- python3 script.py               # esecuzione isolata
 ```
 
-Flag principali: `--provider`, `--model`, `--instructions`, `--max-turns`,
-`--allow-http`, `--no-tools`, `--session`/`-S`, `--sessions-dir`, `--config`/`-c`.
+Flag principali: `--provider`, `--model`, `--instructions`, `--max-turns`, `--max-cost`,
+`--workflow-cost`, `--allow-http`, `--no-tools`, `--session`/`-S`, `--sessions-dir`,
+`--config`/`-c`.
+
+Il costo in dollari di ogni richiesta compare nella riga di fine turno. I prezzi vengono dal
+listino pubblico di OpenRouter (tutti i vendor), scaricato una volta al giorno in
+`<data>/ringil/prices.json`; OpenRouter dichiara il costo di ogni chiamata, che vince; i
+modelli su questa macchina e l'abbonamento ChatGPT costano zero. `prices:` in ringil.yaml
+aggiunge o corregge un modello. `--max-cost` e `--workflow-cost` su un modello senza prezzo
+sono rifiutati, perché non fermerebbero nulla.
 
 ### ringil.yaml
 
@@ -36,7 +44,7 @@ Il modello si sceglie per nome del provider (`provider:`, `--provider`, `RINGIL_
 Pronti senza configurazione, con il segreto della chiave: `anthropic` (`ANTHROPIC_API_KEY`),
 `chatgpt` (abbonamento, `ringil login chatgpt`), `openai` (`OPENAI_API_KEY`), `google`
 (Gemini, `GEMINI_API_KEY`), `openrouter`, `nvidia` (NIM), `deepseek`, `requesty`, `zai`,
-`moonshot` (`<NOME>_API_KEY`), `ollama` (questa macchina, senza chiave). Altri, quanti se ne
+`moonshot`, `xai` (Grok), `mistral` (`<NOME>_API_KEY`), `ollama` (questa macchina, senza chiave). Altri, quanti se ne
 vuole, nella sezione `providers:` con un nome, l'indirizzo e il segreto della chiave; una
 voce con il nome di uno pronto ne cambia indirizzo o segreto. Profili e modelli audio
 scelgono il loro provider per nome. Ogni chiave va solo al suo provider.

@@ -41,7 +41,7 @@ var mainChoices = []providerChoice{
 	{label: "ChatGPT, with your subscription (Plus, Pro, Business: no API key)", name: "chatgpt"},
 	{label: "OpenAI", name: "openai"},
 	{label: "Google (Gemini)", name: "google"},
-	{label: "An OpenAI-compatible service (OpenRouter, NVIDIA NIM, DeepSeek, Requesty, Z.ai, Moonshot, your own server)", name: compatible},
+	{label: "An OpenAI-compatible service (OpenRouter, NVIDIA NIM, DeepSeek, Requesty, Z.ai, Moonshot, xAI, Mistral, your own server)", name: compatible},
 	{label: "Ollama on this machine (no key)", name: "ollama"},
 }
 
@@ -54,6 +54,8 @@ var compatibleChoices = []providerChoice{
 	{label: "Requesty", name: "requesty"},
 	{label: "Z.ai (GLM)", name: "zai"},
 	{label: "Moonshot (Kimi)", name: "moonshot"},
+	{label: "xAI (Grok)", name: "xai"},
+	{label: "Mistral", name: "mistral"},
 	{label: "Another server (vLLM, LM Studio, a gateway): its address", name: ""},
 }
 

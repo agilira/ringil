@@ -64,6 +64,8 @@ var builtinProviders = map[string]providerEntry{
 	"requesty":   {Kind: providerOpenAI, Base: "https://router.requesty.ai/v1", KeyEnv: "REQUESTY_API_KEY"},
 	"zai":        {Kind: providerOpenAI, Base: "https://api.z.ai/api/paas/v4", KeyEnv: "ZAI_API_KEY"},
 	"moonshot":   {Kind: providerOpenAI, Base: "https://api.moonshot.ai/v1", KeyEnv: "MOONSHOT_API_KEY"},
+	"xai":        {Kind: providerOpenAI, Base: "https://api.x.ai/v1", KeyEnv: "XAI_API_KEY"},
+	"mistral":    {Kind: providerOpenAI, Base: "https://api.mistral.ai/v1", KeyEnv: "MISTRAL_API_KEY"},
 	"ollama":     {Kind: providerOpenAI, Base: ollamaBase},
 }
 

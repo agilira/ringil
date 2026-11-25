@@ -13,7 +13,7 @@
 # GEMINI_API_KEY), openrouter (OPENROUTER_API_KEY), nvidia (NIM,
 # NVIDIA_API_KEY), deepseek (DEEPSEEK_API_KEY), requesty
 # (REQUESTY_API_KEY), zai (ZAI_API_KEY), moonshot (MOONSHOT_API_KEY),
-# ollama (this machine, no key). Each key goes to its own provider and to
+# xai (Grok, XAI_API_KEY), mistral (MISTRAL_API_KEY), ollama (this machine, no key). Each key goes to its own provider and to
 # no other.
 provider: work
 model: example-model
@@ -50,6 +50,13 @@ no_memory: false
 no_tools: false
 workflow_calls: 0              # 0: no limit
 workflow_tokens: 0
+workflow_cost: 0               # US dollars one workflow may spend; 0 no limit
+max_cost: 0.50                 # US dollars per prompt; 0 no limit
+prices:                        # US dollars per million tokens, over the list downloaded each day (OpenRouter's)
+  my-finetune:
+    input: 0.40
+    output: 1.60
+    cache_read: 0.10           # left out: the input price (cache_write too)
 # sessions_dir: /srv/ringil/sessions
 # allow_http: false            # plain HTTP to a host that is not loopback
 images: false                  # the model reads images (RINGIL_IMAGES=1 too)

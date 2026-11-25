@@ -47,6 +47,7 @@ func (c *cli) delegateCrew(ctx *orpheus.Context, p agent.Provider, parentTools a
 			Provider:     p,
 			Approve:      c.decide,
 			MaxTurns:     c.maxTurns(ctx),
+			MaxCost:      c.maxCost,
 			Observers:    append([]agent.Observer{c.showWorker}, c.events...),
 			KeepImages:   c.keepImages(ctx),
 			Loop:         agent.Loop{Action: agent.LoopWarn},
@@ -113,6 +114,7 @@ func (c *cli) showWorker(ev agent.Event) {
 	case agent.EventDone:
 		c.workerIn.Add(int64(ev.Result.Usage.Input))
 		c.workerOut.Add(int64(ev.Result.Usage.Output))
+		c.workerCost.Add(int64(ev.Result.Usage.Cost * 1e9)) // nano-dollars: an atomic integer
 		c.note(strings.TrimPrefix(tag, "  ") + "done, " + strconv.Itoa(ev.Result.Turns) + " model calls")
 	}
 }

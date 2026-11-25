@@ -48,7 +48,12 @@ type config struct {
 	AcceptEdits    bool     `argus:"accept_edits"`
 	WorkflowCalls  int      `argus:"workflow_calls"`
 	WorkflowTokens int      `argus:"workflow_tokens"`
-	SessionsDir    string   `argus:"sessions_dir"`
+	// MaxCost and WorkflowCost are US dollars: a prompt's, a workflow's.
+	MaxCost      float64 `argus:"max_cost"`
+	WorkflowCost float64 `argus:"workflow_cost"`
+	// Prices add or replace models' prices (cost.go).
+	Prices      map[string]priceEntry `argus:"prices"`
+	SessionsDir string                `argus:"sessions_dir"`
 	// Images: the model reads images (RINGIL_IMAGES=1 too).
 	Images bool `argus:"images"`
 	// EmbedInputType sends the input type to the embedding model
@@ -284,7 +289,7 @@ func (s serveConfig) fixed() serveConfig {
 // Validate is what a file must be to be applied at all: a reload that
 // fails it is refused and the last good file stays.
 func (f *config) Validate() error {
-	checks := []func() error{f.checkGone, f.Proxy.check, f.Permissions.check, f.checkProviders, f.checkProfiles, f.checkPaths, f.Memory.check, f.Embedder.check, f.checkMCP, f.Serve.check, f.Secrets.check}
+	checks := []func() error{f.checkGone, f.Proxy.check, f.Permissions.check, f.checkProviders, f.checkProfiles, f.checkPaths, f.Memory.check, f.Embedder.check, f.checkMCP, f.Serve.check, f.Secrets.check, f.checkCosts}
 	for _, check := range checks {
 		if err := check(); err != nil {
 			return err
