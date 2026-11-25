@@ -142,7 +142,11 @@ type cli struct {
 	// run's tools once made; triggers the runner serve runs (shared).
 	roleName   string
 	finalTools agent.Registry
-	triggers   *atomic.Pointer[trigger.Runner]
+	// live are the agent's tools, where add_mcp_server adds a server's;
+	// catalog the skills install_skill reloads.
+	live     *agent.LiveRegistry
+	catalog  *skills.Catalog
+	triggers *atomic.Pointer[trigger.Runner]
 	// bridge is serve's Telegram bridge, for what automations deliver.
 	bridge *atomic.Pointer[channel.Bridge]
 	// board holds the checks set with check_later (shared under serve);
@@ -334,14 +338,14 @@ func (c *cli) agent(ctx *orpheus.Context) (agent.Agent, error) {
 	if tools, err = c.finishTools(ctx, model, tools); err != nil {
 		return nil, err
 	}
-	c.finalTools = tools
-	system, instructions, err := c.prompts(cat)
+	c.finalTools, c.live, c.catalog = tools, agent.NewLiveRegistry(tools), cat
+	system, instructions, err := c.prompts()
 	if err != nil {
 		return nil, err
 	}
 	return agent.New(agent.Config{
 		Provider:      model,
-		Tools:         tools,
+		Tools:         c.live,
 		Memory:        mem,
 		Approve:       c.decide,
 		System:        system,
@@ -358,13 +362,11 @@ func (c *cli) agent(ctx *orpheus.Context) (agent.Agent, error) {
 	})
 }
 
-// prompts are the run's system prompt (the base, with what a chat, an
-// /automate run and the skills add) and the operator's instructions.
-func (c *cli) prompts(cat *skills.Catalog) (system, instructions string, err error) {
+// prompts are the run's system prompt (the base, with what a chat and an
+// /automate run add) and the operator's instructions. The skills come as
+// a context block, so one installed during a session is listed.
+func (c *cli) prompts() (system, instructions string, err error) {
 	system = c.automateSystem(c.chatSystem(agent.DefaultSystem))
-	if cat != nil {
-		system += cat.Instructions()
-	}
 	instructions, err = c.instructions()
 	return system, instructions, err
 }
@@ -384,7 +386,7 @@ func (c *cli) tools(ctx *orpheus.Context, mem agent.Memory, cat *skills.Catalog)
 	if err != nil {
 		return nil, err
 	}
-	if reg, err = reg.With(append(c.extraTools(mem, cat), c.installTools(ctx)...)...); err != nil {
+	if reg, err = reg.With(append(c.extraTools(mem, cat), c.installTools(ctx, cat)...)...); err != nil {
 		return nil, err
 	}
 	remote, err := c.remoteTools(ctx)
@@ -513,6 +515,9 @@ func (c *cli) runContext(nb *notes.Notes, withRules bool) func(context.Context) 
 		if ok {
 			blocks = append(blocks, agent.ContextBlock{Name: "rules", Text: rules.Render(rules.Load(cfg))})
 		}
+		if c.catalog != nil {
+			blocks = append(blocks, agent.ContextBlock{Name: "skills", Text: c.catalog.Instructions()})
+		}
 		if nb != nil {
 			n, err := nb.Context(ctx)
 			if err != nil {
@@ -582,7 +587,7 @@ func (c *cli) extraTools(mem agent.Memory, cat *skills.Catalog) []agent.Tool {
 	if mem != nil {
 		extra = append(extra, memory.Tools(mem)...)
 	}
-	if cat != nil && len(cat.List()) > 0 {
+	if c.offersSkills(cat) {
 		extra = append(extra, skills.Tools(cat, c.skillOptions())...)
 	}
 	if dir, err := c.skillsDir(); err == nil && !c.restricted() {
@@ -595,6 +600,12 @@ func (c *cli) extraTools(mem agent.Memory, cat *skills.Catalog) []agent.Tool {
 		}
 	}
 	return append(extra, c.laterTools()...)
+}
+
+// offersSkills: there are skills, or the owner may install one during
+// the session.
+func (c *cli) offersSkills(cat *skills.Catalog) bool {
+	return cat != nil && (len(cat.List()) > 0 || !c.restricted())
 }
 
 // defaultDirs are the start directory and the user's home: the agent moves

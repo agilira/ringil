@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	stderrors "errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -621,8 +622,10 @@ func TestSkillInstallListUseRemove(t *testing.T) {
 	}
 	reqs := h.script.Requests()
 	checkOffered(t, reqs[0].Tools, "load_skill", "read_skill_file")
-	if !strings.Contains(reqs[0].System, `{"name":"invoice"`) {
-		t.Fatalf("skill not listed: %q", reqs[0].System)
+	// 25/11: the list is a context block of the turn, so a skill installed
+	// during a session is listed; the system prompt stays as it is.
+	if strings.Contains(reqs[0].System, "invoice") || !strings.Contains(fmt.Sprintf("%+v", reqs[0].Messages), `{"name":"invoice"`) {
+		t.Fatalf("skill not listed in the turn's context: %q / %+v", reqs[0].System, reqs[0].Messages)
 	}
 	if !strings.HasPrefix(reqs[0].System, agent.DefaultSystem) { // 20/11: the skills' list took the base's place
 		t.Fatalf("the base prompt is gone: %q", reqs[0].System)

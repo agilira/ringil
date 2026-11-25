@@ -83,6 +83,21 @@ func TestAddMCPRemoteSavesAndLists(t *testing.T) {
 	})
 }
 
+// In a session, the added server's tools join the agent's at once.
+func TestAddMCPJoinsTheLiveSession(t *testing.T) {
+	url := fakeMCP(t) + "/mcp"
+	addHarness(t, func(c *cli, _ string) {
+		c.live = agent.NewLiveRegistry(nil)
+		got, err := c.addMCP(context.Background(), mcp.Entry{Name: "dw", URL: url}, resolveWith(nil))
+		if err != nil || got.NextSession {
+			t.Fatalf("added %+v, %v", got, err)
+		}
+		if !c.live.Has("dw__search") || !c.live.Has("dw__create_pod") {
+			t.Fatalf("live tools %v", c.live.Specs())
+		}
+	})
+}
+
 func TestAddMCPMissingSecretSavesWithoutStarting(t *testing.T) {
 	addHarness(t, func(c *cli, path string) {
 		e := mcp.Entry{Name: "gh", Command: []string{"/nonexistent/srv", "--stdio"}, Env: map[string]string{"GITHUB_TOKEN": "${GITHUB_TOKEN}"}}
@@ -132,14 +147,14 @@ func TestInstallToolsOnlyForTheOwner(t *testing.T) {
 	env(h, map[string]string{})
 	probe(t, h.c, nil, func(ctx *orpheus.Context) error {
 		names := map[string]bool{}
-		for _, tool := range h.c.installTools(ctx) {
+		for _, tool := range h.c.installTools(ctx, nil) {
 			names[tool.Spec().Name] = true
 		}
 		if !names["install_skill"] || !names["add_mcp_server"] {
 			t.Errorf("owner tools %v", names)
 		}
 		h.c.inTrigger = true
-		if got := h.c.installTools(ctx); len(got) != 0 {
+		if got := h.c.installTools(ctx, nil); len(got) != 0 {
 			t.Errorf("a trigger's run got %d install tools", len(got))
 		}
 		return nil

@@ -21,15 +21,26 @@ import (
 
 // installTools are install_skill and add_mcp_server, for the user's own
 // sessions: a restricted role and a trigger's runs install nothing.
-func (c *cli) installTools(ctx *orpheus.Context) []agent.Tool {
+func (c *cli) installTools(ctx *orpheus.Context, cat *skills.Catalog) []agent.Tool {
 	dir, err := c.skillsDir()
 	if err != nil || c.restricted() || c.inTrigger {
 		return nil
 	}
 	resolve := func() (secrets.Resolver, error) { return c.resolver(ctx) }
 	return []agent.Tool{
-		skills.InstallTool(dir, skills.GitHub{}, nil), // the catalog is read at the next session
+		skills.InstallTool(dir, skills.GitHub{}, func(skills.Installed) { c.reloadSkills(cat) }),
 		mcp.AddTool(func(ctx context.Context, e mcp.Entry) (mcp.Added, error) { return c.addMCP(ctx, e, resolve) }),
+	}
+}
+
+// reloadSkills reads the catalog again: the skill just installed is
+// loaded and run in this session, and listed from the next prompt.
+func (c *cli) reloadSkills(cat *skills.Catalog) {
+	if cat == nil {
+		return
+	}
+	if err := cat.Reload(); err != nil {
+		c.note("the skills could not be read again: " + describe(err))
 	}
 }
 
@@ -47,8 +58,7 @@ func entryOf(e mcp.Entry) mcpEntry {
 }
 
 // addMCP saves the server under mcp_servers and, when its secrets are
-// all set, starts it once to list its tools; they come in the next
-// session.
+// all set, starts it and adds its tools to this session's.
 func (c *cli) addMCP(ctx context.Context, e mcp.Entry, resolve func() (secrets.Resolver, error)) (mcp.Added, error) {
 	if _, taken := c.conf().MCPServers[e.Name]; taken {
 		return mcp.Added{}, agent.ToolError(mcp.ErrConfig, "A server named "+e.Name+" is already configured: pick another name.")
@@ -65,11 +75,10 @@ func (c *cli) addMCP(ctx context.Context, e mcp.Entry, resolve func() (secrets.R
 	if err := c.saveServer(e.Name, entry); err != nil {
 		return mcp.Added{}, err
 	}
-	added := mcp.Added{Missing: missing, NextSession: true}
-	if len(missing) == 0 {
-		added.Tools, err = c.probeServer(ctx, e.Name, entry, res)
+	if len(missing) > 0 {
+		return mcp.Added{Missing: missing, NextSession: true}, nil
 	}
-	return added, err
+	return c.attachServer(ctx, e.Name, entry, res)
 }
 
 // missingRefs are the names res does not hold.
@@ -87,19 +96,28 @@ func missingRefs(ctx context.Context, res secrets.Resolver, names []string) ([]s
 	return missing, nil
 }
 
-// probeServer starts the server, lists its tools and stops it.
-func (c *cli) probeServer(ctx context.Context, name string, e mcpEntry, res secrets.Resolver) ([]string, error) {
+// attachServer starts the server and adds its tools to the session's;
+// without a live session (a test) it lists them and stops it.
+func (c *cli) attachServer(ctx context.Context, name string, e mcpEntry, res secrets.Resolver) (mcp.Added, error) {
 	client, err := c.startServer(ctx, name, e, res)
 	if err != nil {
-		return nil, agent.ToolError(mcp.ErrConnect, "The server is saved in ringil.yaml but did not start: check its command or URL with the user. ("+describe(err)+")")
+		return mcp.Added{}, agent.ToolError(mcp.ErrConnect, "The server is saved in ringil.yaml but did not start: check its command or URL with the user. ("+describe(err)+")")
 	}
-	defer func() { _ = client.Close() }()
-	var names []string
-	for _, t := range client.Tools() {
-		names = append(names, t.Spec().Name)
+	tools := client.Tools()
+	added := mcp.Added{NextSession: c.live == nil}
+	for _, t := range tools {
+		added.Tools = append(added.Tools, t.Spec().Name)
 	}
-	sort.Strings(names)
-	return names, nil
+	sort.Strings(added.Tools)
+	if c.live == nil {
+		return added, client.Close()
+	}
+	if err := c.live.Add(tools...); err != nil {
+		_ = client.Close()
+		return mcp.Added{NextSession: true}, agent.ToolError(mcp.ErrConfig, "The server is saved, but a tool name clashes with one in use: it comes in the next session.")
+	}
+	c.closers = append(c.closers, client.Close)
+	return added, nil
 }
 
 // saveServer writes the entry under mcp_servers.<name> through argus's
