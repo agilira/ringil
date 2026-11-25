@@ -46,6 +46,9 @@ type mcpEntry struct {
 	// OldNetwork is the key of before 23/11, read only to say where it
 	// went.
 	OldNetwork *bool `argus:"network"`
+	// Source is where the server came from, such as the repository the
+	// user gave add_mcp_server.
+	Source string `argus:"source"`
 	// Disabled keeps the entry without starting it.
 	Disabled bool `argus:"disabled"`
 	// TrustAnnotations lets the server's read-only hints skip the

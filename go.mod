@@ -3,9 +3,9 @@ module github.com/agilira/ringil
 go 1.27.0
 
 require (
-	github.com/agilira/argus v1.10.1
+	github.com/agilira/argus v1.10.2
 	github.com/agilira/go-errors v1.1.3
-	github.com/agilira/orpheus v1.6.1
+	github.com/agilira/orpheus v1.12.0
 	github.com/agilira/ringil-agent-sdk v0.0.0
 	github.com/agilira/ringil-agent-sdk/a2a v0.0.0
 	github.com/agilira/ringil-agent-sdk/mcp v0.0.0
@@ -18,7 +18,7 @@ require (
 
 require (
 	github.com/a2aproject/a2a-go/v2 v2.8.0 // indirect
-	github.com/agilira/flash-flags v1.3.2 // indirect
+	github.com/agilira/flash-flags v1.3.5 // indirect
 	github.com/agilira/go-timecache v1.0.4 // indirect
 	github.com/agilira/ringil-agent-sdk/secrets/keyring v0.0.0 // indirect
 	github.com/anthropics/anthropic-sdk-go/v2 v2.13.0 // indirect
@@ -56,10 +56,10 @@ require (
 	golang.org/x/sys v0.50.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
-	modernc.org/libc v1.79.0 // indirect
+	modernc.org/libc v1.80.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
-	modernc.org/sqlite v1.61.1 // indirect
+	modernc.org/sqlite v1.62.0 // indirect
 	mvdan.cc/sh/v3 v3.14.1 // indirect
 )
 

@@ -384,7 +384,7 @@ func (c *cli) tools(ctx *orpheus.Context, mem agent.Memory, cat *skills.Catalog)
 	if err != nil {
 		return nil, err
 	}
-	if reg, err = reg.With(c.extraTools(mem, cat)...); err != nil {
+	if reg, err = reg.With(append(c.extraTools(mem, cat), c.installTools(ctx)...)...); err != nil {
 		return nil, err
 	}
 	remote, err := c.remoteTools(ctx)
