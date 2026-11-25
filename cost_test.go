@@ -169,3 +169,11 @@ func TestPriceListDown(t *testing.T) {
 		t.Fatalf("exit %d %q", code, h.err)
 	}
 }
+
+func TestReadsPDF(t *testing.T) {
+	for base, want := range map[string]bool{"https://api.openai.com/v1": true, "https://openrouter.ai/api/v1": true, "http://openrouter.ai/api/v1": false, "https://api.deepseek.com": false, "http://127.0.0.1:11434/v1": false} {
+		if readsPDF(base) != want {
+			t.Errorf("%s: %v", base, !want)
+		}
+	}
+}

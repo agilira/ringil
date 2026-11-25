@@ -122,6 +122,16 @@ func local(base string) bool {
 	return err == nil && (u.Hostname() == "localhost" || loopback(u.Hostname()))
 }
 
+// readsPDF: the API takes PDFs as files in Chat Completions (OpenAI's,
+// and OpenRouter's for every model). Others are told a PDF is there.
+func readsPDF(base string) bool {
+	u, err := url.Parse(base)
+	if err != nil || u.Scheme != "https" {
+		return false
+	}
+	return u.Hostname() == "api.openai.com" || u.Hostname() == "openrouter.ai"
+}
+
 // statesCost: OpenRouter puts each call's cost in its answer.
 func statesCost(base string) bool {
 	u, err := url.Parse(base)

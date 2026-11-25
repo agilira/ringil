@@ -914,6 +914,7 @@ func (c *cli) newModel(ctx *orpheus.Context, res secrets.Resolver, ep endpoint, 
 		AllowHTTP:  c.flagBool(ctx, "allow-http"),
 		Images:     c.images(ctx.Context(), res),
 		StatesCost: statesCost(ep.base),
+		Documents:  readsPDF(ep.base),
 	})
 	if err != nil {
 		return nil, err
