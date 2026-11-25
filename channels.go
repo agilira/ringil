@@ -17,22 +17,39 @@ import (
 	agent "github.com/agilira/ringil-agent-sdk"
 	"github.com/agilira/ringil-agent-sdk/channel"
 	"github.com/agilira/ringil-agent-sdk/channel/telegram"
+	"github.com/agilira/ringil-agent-sdk/dirs"
 	"github.com/agilira/ringil-agent-sdk/provider/openai"
 	"github.com/agilira/ringil-agent-sdk/secrets"
 	"github.com/agilira/ringil-agent-sdk/serve"
 )
 
-// startChannels connects Telegram when RINGIL_TELEGRAM_TOKEN is set (in
-// the environment or the --env-file). The owners (serve.telegram.owners in ringil.yaml) talk
-// with --profile, else default, and approve; the members (listed, or in
-// serve.telegram.company_group, or sharing a serve.telegram.member_phones number)
-// with serve.member_profile; with serve.public_profile, anyone else with it. A
-// message from anyone else is noted with its ID.
+// startChannels connects the chat apps whose tokens are set (in the
+// environment or the --env-file): Telegram with RINGIL_TELEGRAM_TOKEN,
+// Slack with SLACK_BOT_TOKEN and SLACK_APP_TOKEN. The owners
+// (serve.telegram.owners, serve.slack.owners in ringil.yaml) talk with
+// --profile, else default, and approve; the members (listed, or for
+// Telegram in serve.telegram.company_group, or sharing a
+// serve.telegram.member_phones number) with serve.member_profile; with
+// serve.public_profile, anyone else with it. A message from anyone else
+// is noted with its ID.
 func (c *cli) startChannels(ctx *orpheus.Context, run context.Context, srv *serve.Server) (func(), error) {
 	res, err := c.resolver(ctx)
 	if err != nil {
 		return nil, err
 	}
+	stopTelegram, err := c.startTelegram(ctx, run, res, srv)
+	if err != nil {
+		return nil, err
+	}
+	stopSlack, err := c.startSlack(ctx, run, res, srv)
+	if err != nil {
+		stopTelegram()
+		return nil, err
+	}
+	return func() { stopSlack(); stopTelegram() }, nil
+}
+
+func (c *cli) startTelegram(ctx *orpheus.Context, run context.Context, res secrets.Resolver, srv *serve.Server) (func(), error) {
 	token, found, err := secrets.Lookup(run, storeOnly(res), "RINGIL_TELEGRAM_TOKEN") // a planted token would start someone else's bot
 	if err != nil || !found {
 		return func() {}, err
@@ -61,7 +78,7 @@ func (c *cli) telegramConfig(ctx *orpheus.Context, run context.Context, res secr
 	if err != nil {
 		return channel.Config{}, errors.Wrap(err, ErrUsage, "telegram: "+err.Error())
 	}
-	cfg, err := c.bridgeConfig(ctx, res)
+	cfg, err := c.bridgeConfig(ctx, res, "telegram")
 	if err != nil {
 		return channel.Config{}, err
 	}
@@ -85,7 +102,7 @@ func background(ctx context.Context, work func(context.Context) error) func() {
 
 // bridgeConfig is what a chat app's bridge does, from the flags and
 // settings: who is heard, voice in and out, where documents go.
-func (c *cli) bridgeConfig(ctx *orpheus.Context, res secrets.Resolver) (channel.Config, error) {
+func (c *cli) bridgeConfig(ctx *orpheus.Context, res secrets.Resolver, app string) (channel.Config, error) {
 	sc := c.conf().Serve
 	ear, err := c.transcriber(ctx, res)
 	if err != nil {
@@ -103,14 +120,21 @@ func (c *cli) bridgeConfig(ctx *orpheus.Context, res secrets.Resolver) (channel.
 		return channel.Config{}, err
 	}
 	who := sc.people(c.flagBool(ctx, "no-approvals"))
+	if app == "slack" {
+		who = sc.slackPeople(c.flagBool(ctx, "no-approvals"))
+	}
+	state, err := c.stateDir()
+	if err != nil {
+		return channel.Config{}, err
+	}
 	return channel.Config{Profile: a2aProfile(ctx), Owners: who.Owners,
 		Members: who.Members, MemberProfile: who.MemberProfile,
-		MemberPhones: who.MemberPhones, SharedPhones: filepath.Join(filepath.Dir(c.inboxRoot), "telegram-phones.json"),
+		MemberPhones: who.MemberPhones, SharedPhones: filepath.Join(state, app+"-phones.json"),
 		PublicProfile: who.PublicProfile, MaxPerHour: who.MaxPerHour,
 		Transcriber: ear, Synthesizer: mouth, VoiceReplies: sc.replies() == "voice", Inbox: c.inboxRoot,
-		Sessions: filepath.Join(filepath.Dir(c.inboxRoot), "telegram-sessions.json"), IdleReset: idle, OnEvent: c.channelEvent, Automations: c.automationsText,
+		Sessions: filepath.Join(state, app+"-sessions.json"), IdleReset: idle, OnEvent: c.channelEvent(app), Automations: c.automationsText,
 		Listens: c.listens, Hear: c.hear,
-		Language: sc.language(), NoApprovals: who.NoApprovals}, nil
+		Language: sc.language(), NoApprovals: who.NoApprovals, Own: []string{state}}, nil
 }
 
 // newAfter reads serve.new_after: a duration (at least a minute), or never.
@@ -125,15 +149,17 @@ func newAfter(s string) (time.Duration, error) {
 	return d, nil
 }
 
-func (c *cli) channelEvent(e channel.Event) {
-	switch e.Kind {
-	case channel.Refused:
-		c.note("telegram: message from user " + clean(e.From) + " not allowed (add " + clean(e.From) + " to serve.telegram.owners or members in ringil.yaml to let them in)")
-	case channel.Limited:
-		c.note("telegram: user " + clean(e.From) + " went past serve.max_per_hour")
-	default:
-		if what := failures(e); what != "" && e.Err != nil {
-			c.note("telegram: " + what + ": " + clean(oneLine(e.Err.Error(), 300)))
+func (c *cli) channelEvent(app string) func(channel.Event) {
+	return func(e channel.Event) {
+		switch e.Kind {
+		case channel.Refused:
+			c.note(app + ": message from user " + clean(e.From) + " not allowed (add " + clean(e.From) + " to serve." + app + ".owners or members in ringil.yaml to let them in)")
+		case channel.Limited:
+			c.note(app + ": user " + clean(e.From) + " went past serve.max_per_hour")
+		default:
+			if what := failures(e); what != "" && e.Err != nil {
+				c.note(app + ": " + what + ": " + clean(oneLine(e.Err.Error(), 300)))
+			}
 		}
 	}
 }
@@ -154,11 +180,11 @@ func failures(e channel.Event) string {
 // inboxDir is where the documents sent in the chats are kept, a
 // directory per conversation: <config>/ringil/inbox, private to the user.
 func (c *cli) inboxDir() (string, error) {
-	base, err := c.configDir()
+	base, err := c.dataDir()
 	if err != nil {
-		return "", errors.Wrap(err, ErrUsage, "no user config directory for the documents sent in the chats")
+		return "", errors.Wrap(err, ErrUsage, "no user data directory for the documents sent in the chats")
 	}
-	dir := filepath.Join(base, "ringil", "inbox")
+	dir := filepath.Join(base, "inbox")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", errors.Wrap(err, ErrUsage, "cannot create "+dir)
 	}
@@ -250,4 +276,20 @@ func (c *cli) hear(chat, text string) {
 	if r := c.triggers.Load(); r != nil {
 		r.Heard(chat, text)
 	}
+}
+
+// stateDir is ringil's own directory in the user's configuration: what
+// the agent's tools are never granted.
+func (c *cli) stateDir() (string, error) {
+	base, err := c.configDir()
+	if err != nil {
+		return "", errors.Wrap(err, ErrUsage, "no user config directory")
+	}
+	return filepath.Join(base, "ringil"), nil
+}
+
+// ringilData is ringil's data directory on this system.
+func ringilData() (string, error) {
+	d, err := dirs.For("ringil")
+	return d.Data, err
 }

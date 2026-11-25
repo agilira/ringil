@@ -8,10 +8,12 @@ require (
 	github.com/agilira/orpheus v1.12.0
 	github.com/agilira/ringil-agent-sdk v0.0.0
 	github.com/agilira/ringil-agent-sdk/a2a v0.0.0
+	github.com/agilira/ringil-agent-sdk/channel/slack v0.0.0
 	github.com/agilira/ringil-agent-sdk/mcp v0.0.0
 	github.com/agilira/ringil-agent-sdk/memory/sqlite v0.0.0
 	github.com/agilira/ringil-agent-sdk/provider/anthropic v0.0.0
 	github.com/agilira/ringil-agent-sdk/secrets/store v0.0.0
+	github.com/modelcontextprotocol/go-sdk v1.8.0
 	golang.org/x/net v0.60.0
 	golang.org/x/term v0.48.0
 )
@@ -24,6 +26,7 @@ require (
 	github.com/anthropics/anthropic-sdk-go/v2 v2.13.0 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/buger/jsonparser v1.1.2 // indirect
+	github.com/coder/websocket v1.8.15 // indirect
 	github.com/danieljoos/wincred v1.2.3 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
@@ -33,7 +36,6 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/invopop/jsonschema v0.14.0 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
-	github.com/modelcontextprotocol/go-sdk v1.8.0 // indirect
 	github.com/ncruces/go-strftime v1.1.0 // indirect
 	github.com/pb33f/ordered-map/v2 v2.3.1 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
@@ -77,3 +79,5 @@ replace github.com/agilira/ringil-agent-sdk/provider/anthropic => ../ringil-agen
 replace github.com/agilira/ringil-agent-sdk/secrets/keyring => ../ringil-agent-sdk/secrets/keyring
 
 replace github.com/agilira/ringil-agent-sdk/secrets/store => ../ringil-agent-sdk/secrets/store
+
+replace github.com/agilira/ringil-agent-sdk/channel/slack => ../ringil-agent-sdk/channel/slack

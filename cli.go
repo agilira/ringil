@@ -75,8 +75,11 @@ type cli struct {
 	// turnContext scopes one user turn, so Ctrl-C stops the answer, not the
 	// chat.
 	turnContext func(context.Context) (context.Context, context.CancelFunc)
-	// configDir is where sessions live by default.
+	// configDir is where sessions live by default; dataDir ringil's data
+	// (dirs.For("ringil").Data): the documents sent in the chats, which
+	// the agent's tools may read, unlike its configuration.
 	configDir func() (string, error)
+	dataDir   func() (string, error)
 	// newEmbedder builds the embedding model; tests may replace it.
 	newEmbedder func(openai.Config) (agent.Embedder, error)
 	// closers stop the MCP servers started for the current command.
@@ -147,8 +150,10 @@ type cli struct {
 	live     *agent.LiveRegistry
 	catalog  *skills.Catalog
 	triggers *atomic.Pointer[trigger.Runner]
-	// bridge is serve's Telegram bridge, for what automations deliver.
-	bridge *atomic.Pointer[channel.Bridge]
+	// bridge is serve's bridge automations deliver through: Telegram's,
+	// else Slack's; slackBridge is Slack's, for its people.
+	bridge      *atomic.Pointer[channel.Bridge]
+	slackBridge *atomic.Pointer[channel.Bridge]
 	// board holds the checks set with check_later (shared under serve);
 	// due, in the terminal, the checks come due waiting for the prompt.
 	board       *later.Board
@@ -191,6 +196,7 @@ func newCLI(in io.Reader, out, errOut io.Writer) *cli {
 			return signal.NotifyContext(ctx, os.Interrupt)
 		},
 		configDir:     os.UserConfigDir,
+		dataDir:       ringilData,
 		secrets:       &store.Cache{},
 		checkComposio: connectComposio,
 		interactive: func() bool {
@@ -200,11 +206,12 @@ func newCLI(in io.Reader, out, errOut io.Writer) *cli {
 		newTelegram: func(ctx context.Context, cfg telegram.Config) (telegramBot, error) {
 			return telegram.New(ctx, cfg)
 		},
-		triggers:   &atomic.Pointer[trigger.Runner]{},
-		bridge:     &atomic.Pointer[channel.Bridge]{},
-		newSandbox: sandbox.New,
-		cwd:        os.Getwd,
-		home:       os.UserHomeDir,
+		triggers:    &atomic.Pointer[trigger.Runner]{},
+		bridge:      &atomic.Pointer[channel.Bridge]{},
+		slackBridge: &atomic.Pointer[channel.Bridge]{},
+		newSandbox:  sandbox.New,
+		cwd:         os.Getwd,
+		home:        os.UserHomeDir,
 	}
 }
 

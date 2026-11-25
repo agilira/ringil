@@ -165,6 +165,14 @@ type serveConfig struct {
 	NewAfter      string         `argus:"new_after"`
 	Replies       string         `argus:"replies"`
 	Telegram      telegramConfig `argus:"telegram"`
+	Slack         slackConfig    `argus:"slack"`
+}
+
+// slackConfig is who the Slack app talks with, by member ID (U…); its
+// tokens are SLACK_BOT_TOKEN (xoxb-) and SLACK_APP_TOKEN (xapp-).
+type slackConfig struct {
+	Owners  []string `argus:"owners"`
+	Members []string `argus:"members"`
 }
 
 // telegramConfig is who the Telegram bot talks with; its token is
@@ -257,9 +265,18 @@ func (s serveConfig) people(noApprovals bool) channel.People {
 		NoApprovals: noApprovals}
 }
 
+// slackPeople is who the Slack app hears: its owners and members, and
+// the profiles and limits shared with Telegram.
+func (s serveConfig) slackPeople(noApprovals bool) channel.People {
+	p := s.people(noApprovals)
+	p.Owners, p.Members, p.MemberPhones = s.Slack.Owners, s.Slack.Members, nil
+	return p
+}
+
 // fixed is what serve sets up once: all but people.
 func (s serveConfig) fixed() serveConfig {
 	s.Telegram.Owners, s.Telegram.Members, s.Telegram.MemberPhones = nil, nil, nil
+	s.Slack.Owners, s.Slack.Members = nil, nil
 	s.MemberProfile, s.PublicProfile, s.MaxPerHour = "", "", nil
 	return s
 }

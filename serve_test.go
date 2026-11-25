@@ -21,6 +21,7 @@ func TestServeToken(t *testing.T) {
 	c := newCLI(strings.NewReader(""), io.Discard, io.Discard)
 	c.getenv = func(string) string { return "" }
 	c.configDir = func() (string, error) { return dir, nil }
+	c.dataDir = func() (string, error) { return filepath.Join(dir, "data"), nil }
 	first, where, err := c.keptServeToken()
 	if err != nil || len(first) < 32 || !strings.Contains(where, "(new)") {
 		t.Fatalf("%q %q %v", first, where, err)

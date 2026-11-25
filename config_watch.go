@@ -22,6 +22,7 @@ import (
 	"github.com/agilira/orpheus/pkg/orpheus"
 
 	agent "github.com/agilira/ringil-agent-sdk"
+	"github.com/agilira/ringil-agent-sdk/channel"
 )
 
 // settings is the configuration in force, shared by serve's runs: the
@@ -447,11 +448,9 @@ func (c *cli) applyConfig(s *settings, next *config) error {
 	}
 	last := s.get()
 	s.current.Store(next)
-	if b := c.bridge.Load(); b != nil {
-		if err := b.SetPeople(next.Serve.people(s.noApprovals(next))); err != nil {
-			s.current.Store(last)
-			return err
-		}
+	if err := c.setPeople(s, next); err != nil {
+		s.current.Store(last)
+		return err
 	}
 	if why := restartFor(s.started, next); why != "" {
 		c.note(s.path + ": " + why + ": changed, in force from the next start of serve")
@@ -478,4 +477,33 @@ func (s *settings) acceptable(next *config) error {
 		}
 	}
 	return nil
+}
+
+// setPeople gives each chat app's bridge its people from next.
+func (c *cli) setPeople(s *settings, next *config) error {
+	no := s.noApprovals(next)
+	if b := c.telegramBridge(); b != nil {
+		if err := b.SetPeople(next.Serve.people(no)); err != nil {
+			return err
+		}
+	}
+	if c.slackBridge == nil {
+		return nil
+	}
+	if b := c.slackBridge.Load(); b != nil {
+		return b.SetPeople(next.Serve.slackPeople(no))
+	}
+	return nil
+}
+
+// telegramBridge is the delivery bridge when it is Telegram's.
+func (c *cli) telegramBridge() *channel.Bridge {
+	if c.bridge == nil {
+		return nil
+	}
+	b := c.bridge.Load()
+	if b == nil || (c.slackBridge != nil && c.slackBridge.Load() == b) {
+		return nil
+	}
+	return b
 }
