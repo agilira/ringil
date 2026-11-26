@@ -13,6 +13,7 @@ import (
 	"time"
 
 	agent "github.com/agilira/ringil-agent-sdk"
+	"github.com/agilira/ringil-agent-sdk/artifact"
 )
 
 func TestInboxOf(t *testing.T) {
@@ -111,12 +112,35 @@ func TestRestrictedRoleHasNoArtifacts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	publish := agent.NewTool("publish_artifact", "stands in for the real one", func(context.Context, struct{}) (string, error) { return "", nil })
-	if reg, err = reg.With(publish); err != nil {
+	for _, name := range artifact.ToolNames {
+		stand := agent.NewTool(name, "stands in for the real one", func(context.Context, struct{}) (string, error) { return "", nil })
+		withOne, err := reg.With(stand)
+		if err != nil {
+			t.Fatal(err)
+		}
+		list := []string{"now", name}
+		if _, err := (&cli{role: &profile{Tools: &list}}).onlyTools(withOne); err == nil {
+			t.Fatal("a restricted role with the user's artifacts: " + name)
+		}
+	}
+}
+
+// serve's runs keep artifacts in the app's store, apart from the
+// terminal's: a conversation never reaches a project's scope.
+func TestServeArtifactsApart(t *testing.T) {
+	h := newHarness(t, "")
+	term, err := h.c.artifacts()
+	if err != nil {
 		t.Fatal(err)
 	}
-	list := []string{"now", "publish_artifact"}
-	if _, err := (&cli{role: &profile{Tools: &list}}).onlyTools(reg); err == nil {
-		t.Fatal("a restricted role with the user's artifacts")
+	app, err := h.c.forRun().artifacts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := term.Put(t.Context(), "proj-1", "p.md", artifact.Meta{}, []byte("terminal's")); err != nil {
+		t.Fatal(err)
+	}
+	if list, _ := app.List(t.Context(), "proj-1"); len(list) != 0 {
+		t.Fatal("the app's store sees the terminal's")
 	}
 }

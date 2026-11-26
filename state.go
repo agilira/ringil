@@ -6,6 +6,7 @@
 package main
 
 import (
+	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -19,12 +20,25 @@ import (
 	"github.com/agilira/ringil-agent-sdk/backup"
 )
 
+// artifacts is the terminal's store: a scope per project. A run of serve
+// (shared) works in the app's store instead, a scope per conversation:
+// the two never meet.
 func (c *cli) artifacts() (*artifact.Local, error) {
+	if c.shared {
+		return c.appArtifacts()
+	}
+	return c.artifactStore("artifacts")
+}
+
+// appArtifacts is the store of serve's conversations, which the app reads.
+func (c *cli) appArtifacts() (*artifact.Local, error) { return c.artifactStore("app-artifacts") }
+
+func (c *cli) artifactStore(name string) (*artifact.Local, error) {
 	base, err := c.configDir()
 	if err != nil {
 		return nil, errors.Wrap(err, ErrUsage, "no user config directory")
 	}
-	return artifact.NewLocal(filepath.Join(base, "ringil", "artifacts"))
+	return artifact.NewLocal(filepath.Join(base, "ringil", name))
 }
 
 // artifactScope is the project of the start directory: the agent, its
@@ -37,10 +51,13 @@ func (c *cli) artifactScope() (string, error) {
 	return projectKey(cwd), nil
 }
 
-// artifactTools: the agent publishes in the project's scope and reads
-// what its workers published; a worker publishes in the workers' scope
+// artifactTools: in the terminal the agent works in the project's scope
+// and reads what its workers made; a worker works in the workers' scope
 // and reads the project's, so a worker can never replace what the agent
-// reads as the project's latest.
+// reads as the project's latest. In serve a run's context gives its
+// conversation's scope, the only one it and its workers see: what a
+// worker makes there is the user's to see in the app, by "worker", and
+// a change made on a version no longer the latest is refused.
 func (c *cli) artifactTools(worker bool) []agent.Tool {
 	store, err := c.artifacts()
 	if err != nil {
@@ -50,11 +67,32 @@ func (c *cli) artifactTools(worker bool) []agent.Tool {
 	if err != nil {
 		return nil
 	}
+	if c.shared { // serve: the run's conversation is its only scope, and without one there is none
+		by := "agent"
+		if worker {
+			by = "worker"
+		}
+		return artifact.Tools(store, artifact.Access{By: by, Write: true, Files: c.madeFile})
+	}
 	work := project + "-work"
 	if worker {
-		return artifact.Tools(store, artifact.Access{Scope: work, By: "worker", Publish: true, Read: []string{project}})
+		return artifact.Tools(store, artifact.Access{Scope: work, By: "worker", Write: true, Read: []string{project}, Files: c.madeFile})
 	}
-	return artifact.Tools(store, artifact.Access{Scope: project, By: "agent", Publish: true, Read: []string{work}})
+	return artifact.Tools(store, artifact.Access{Scope: project, By: "agent", Write: true, Read: []string{work}, Files: c.madeFile})
+}
+
+// maxFileArtifact bounds a file the agent saves as an artifact: the
+// store's own bound.
+const maxFileArtifact = 64 << 20
+
+// madeFile is a file the agent made, read as read_file reads: in serve a
+// run's artifacts go to its conversation (artifact.WithScope), in the
+// terminal to the project's scope.
+func (c *cli) madeFile(ctx context.Context, path string) ([]byte, string, error) {
+	if c.ws == nil {
+		return nil, "", agent.ToolError(artifact.ErrInput, "No files are open to this agent.")
+	}
+	return c.ws.ReadFile(ctx, path, maxFileArtifact)
 }
 
 func (c *cli) cmdArtifacts(ctx *orpheus.Context) error {
@@ -78,7 +116,7 @@ func (c *cli) cmdArtifacts(ctx *orpheus.Context) error {
 			if sc != scope {
 				where = "  (workers)"
 			}
-			if err := c.line(clean(a.Name) + " v" + strconv.Itoa(a.Version) + "  " + clean(a.MediaType) + "  " + strconv.FormatInt(a.Size, 10) + " bytes  " + a.Created.Format("2006-01-02 15:04") + "  " + short(a.By) + where); err != nil {
+			if err := c.line(clean(a.Name) + " v" + strconv.Itoa(a.Version) + "  " + a.Kind + "  " + strconv.Quote(clean(a.Title)) + "  " + strconv.FormatInt(a.Size, 10) + " bytes  " + a.Created.Format("2006-01-02 15:04") + "  " + short(a.By) + where); err != nil {
 				return err
 			}
 		}
@@ -145,7 +183,7 @@ func (c *cli) stateSources() (map[string]string, error) {
 	}
 	root := filepath.Join(base, "ringil")
 	sources := map[string]string{}
-	for _, n := range []string{"sessions", "memory", "projects", "workflows", "artifacts", "scratch"} {
+	for _, n := range []string{"sessions", "memory", "projects", "workflows", "artifacts", "app-artifacts", "scratch"} {
 		sources[n] = filepath.Join(root, n)
 	}
 	return sources, nil

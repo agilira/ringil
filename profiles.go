@@ -17,6 +17,7 @@ import (
 	"github.com/agilira/orpheus/pkg/orpheus"
 
 	agent "github.com/agilira/ringil-agent-sdk"
+	"github.com/agilira/ringil-agent-sdk/artifact"
 	"github.com/agilira/ringil-agent-sdk/channel"
 	"github.com/agilira/ringil-agent-sdk/secrets"
 )
@@ -102,7 +103,7 @@ func (c *cli) restricted() bool {
 
 // ownersOnly are tools a restricted role may not list: they reach what is
 // the user's.
-var ownersOnly = map[string]bool{"list_artifacts": true, "read_artifact": true, "publish_artifact": true}
+var ownersOnly = withNames(map[string]bool{}, artifact.ToolNames)
 
 // onlyTools keeps the role's tools, when it lists them; a name that is
 // no tool is an error, not a silent gap.

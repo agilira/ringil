@@ -121,7 +121,11 @@ func (c *cli) newServer(ctx *orpheus.Context) (*serve.Server, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	srv, err := serve.New(serve.Config{Token: token, Store: store, MaxRuns: c.conf().Serve.maxRuns(), Profiles: profiles, App: app, Voice: c.voice(ctx)})
+	arts, err := c.appArtifacts()
+	if err != nil {
+		return nil, "", err
+	}
+	srv, err := serve.New(serve.Config{Token: token, Store: store, MaxRuns: c.conf().Serve.maxRuns(), Profiles: profiles, App: app, Voice: c.voice(ctx), Artifacts: arts})
 	if err != nil {
 		return nil, "", err
 	}

@@ -93,6 +93,9 @@ type cli struct {
 	projectNotes string
 	// readTools are the file reading tools, for read-only workers.
 	readTools []agent.Tool
+	// ws is the file tools' workspace, once made: what the agent may read,
+	// for the tools that take a file it made (save_file_artifact).
+	ws files.Workspace
 	// askMu keeps one question on screen at a time: workers run in
 	// parallel and may all need the user.
 	askMu sync.Mutex
@@ -430,7 +433,7 @@ func (c *cli) tools(ctx *orpheus.Context, mem agent.Memory, cat *skills.Catalog)
 	if err != nil {
 		return nil, err
 	}
-	c.readTools = ws.ReadTools()
+	c.readTools, c.ws = ws.ReadTools(), ws
 	sh, err := c.bashTool(ctx, dirs)
 	if err != nil {
 		return nil, err

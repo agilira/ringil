@@ -15,6 +15,7 @@ import (
 	"github.com/agilira/orpheus/pkg/orpheus"
 
 	agent "github.com/agilira/ringil-agent-sdk"
+	"github.com/agilira/ringil-agent-sdk/artifact"
 	"github.com/agilira/ringil-agent-sdk/delegate"
 	"github.com/agilira/ringil-agent-sdk/notes"
 	"github.com/agilira/ringil-agent-sdk/todo"
@@ -67,8 +68,16 @@ func (c *cli) delegateCrew(ctx *orpheus.Context, p agent.Provider, parentTools a
 
 // personal are the parent's own: its notebooks, task list and memory. A
 // worker gets its own scratchpad and list instead, and no memory.
-var personal = map[string]bool{notes.DefaultName: true, todo.ToolName: true, "remember": true, "recall": true, "forget": true,
-	"list_artifacts": true, "read_artifact": true, "publish_artifact": true}
+var personal = withNames(map[string]bool{notes.DefaultName: true, todo.ToolName: true, "remember": true, "recall": true, "forget": true},
+	artifact.ToolNames)
+
+// withNames is set with names added.
+func withNames(set map[string]bool, names []string) map[string]bool {
+	for _, n := range names {
+		set[n] = true
+	}
+	return set
+}
 
 func sharedTools(parent agent.Registry) (agent.Registry, error) {
 	var names []string
