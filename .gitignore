@@ -12,3 +12,7 @@ go.work.sum
 # Build output
 /ringil
 /ringil.exe
+
+# Our notes and plans stay local: only code, README, license are published
+docs/*
+!docs/ringil.example.yaml
