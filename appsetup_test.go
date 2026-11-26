@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -74,7 +75,8 @@ func checkFirstStartDone(t *testing.T, h *harness, call func(method, p, body str
 	if err != nil || !strings.HasPrefix(string(key), appPassphrase+"=") {
 		t.Fatalf("key file %q %v", key, err)
 	}
-	if info, _ := os.Stat(filepath.Join(h.dir, "ringil", secretsDir, keyFile)); info == nil || info.Mode().Perm()&0o077 != 0 {
+	// Unix modes; on Windows the user's profile keeps it private.
+	if info, _ := os.Stat(filepath.Join(h.dir, "ringil", secretsDir, keyFile)); info == nil || (runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0) {
 		t.Fatal("the key file is not private")
 	}
 	if code, out := call("GET", "/v1/settings/instructions", ""); code != http.StatusOK || !strings.Contains(out, "I am Antonio") {
