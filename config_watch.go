@@ -179,6 +179,7 @@ func (s *settings) start(c *cli) error {
 		if slices.Equal(w.paths, s.pathsOf(f)) {
 			s.watching, s.started, s.applied = w, f, f.digest
 			s.current.Store(f)
+			c.traceConfig(configLoaded, nil, f, "", nil)
 			go s.loop(c)
 			return nil
 		}
@@ -403,6 +404,7 @@ func (s *settings) refuse(c *cli, err error) {
 	}
 	s.told = why
 	c.note(cmp.Or(s.path, "the configuration") + " not applied, the last good one stays: " + why)
+	c.traceConfig(configRefused, s.get(), nil, "", err)
 	if s.audit != nil {
 		s.audit.Log(argus.AuditWarn, "ringil_refused", "ringil.config", s.path, nil, nil,
 			map[string]interface{}{"in_force": s.applied, "reason": why})
@@ -452,9 +454,11 @@ func (c *cli) applyConfig(s *settings, next *config) error {
 		s.current.Store(last)
 		return err
 	}
-	if why := restartFor(s.started, next); why != "" {
+	why := restartFor(s.started, next)
+	if why != "" {
 		c.note(s.path + ": " + why + ": changed, in force from the next start of serve")
 	}
+	c.traceConfig(configApplied, last, next, why, nil)
 	c.note(cmp.Or(s.path, "the configuration") + " applied (config " + next.shortDigest() + ")")
 	if s.audit != nil {
 		s.audit.Log(argus.AuditInfo, "ringil_applied", "ringil.config", s.path, nil, nil,

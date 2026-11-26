@@ -39,6 +39,11 @@ non cambia nulla; un modello senza la sua chiave è lasciato fuori. La conversaz
 ai provider della lista; un profilo con i suoi `models:` usa solo quelli. `--provider` e
 `--model` mettono un altro modello primo, con la lista dopo di lui.
 
+Con `OTEL_EXPORTER_OTLP_ENDPOINT` (e se serve `OTEL_EXPORTER_OTLP_HEADERS`) ogni esecuzione
+diventa una traccia OpenTelemetry: chiamate al modello con token e costo, strumenti, worker;
+mai il testo della conversazione. Anche ogni revisione di ringil.yaml (caricata, applicata,
+rifiutata) è uno span, con le chiavi cambiate e mai i valori.
+
 ```yaml
 models:
   - anthropic:claude-opus-5-5

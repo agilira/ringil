@@ -204,7 +204,8 @@ func (c *cli) forRun() *cli {
 		newProvider: c.newProvider, newAnthropic: c.newAnthropic, turnContext: c.turnContext, configDir: c.configDir, dataDir: c.dataDir, newEmbedder: c.newEmbedder,
 		newSandbox: c.newSandbox, cwd: c.cwd, home: c.home, server: c.server, remote: c.remote, shared: true, events: c.events,
 		triggers: c.triggers, bridge: c.bridge, slackBridge: c.slackBridge, board: c.board, settings: c.settings, secrets: c.secrets,
-		signIns: c.signIns, chatgptIssuer: c.chatgptIssuer, chatgptBase: c.chatgptBase, prices: c.prices}
+		signIns: c.signIns, chatgptIssuer: c.chatgptIssuer, chatgptBase: c.chatgptBase, prices: c.prices,
+		traces: c.traces, traceWarned: c.traceWarned}
 }
 
 // exposeA2A offers a profile (--profile, else default) to other agents, at /a2a on the

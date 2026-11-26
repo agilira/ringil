@@ -48,7 +48,7 @@ func (c *cli) delegateCrew(ctx *orpheus.Context, p agent.Provider, parentTools a
 			Approve:      c.decide,
 			MaxTurns:     c.maxTurns(ctx),
 			MaxCost:      c.maxCost,
-			Observers:    append([]agent.Observer{c.showWorker}, c.events...),
+			Observers:    append([]agent.Observer{c.showWorker}, c.observers(ctx.Context())...),
 			KeepImages:   c.keepImages(ctx),
 			Loop:         agent.Loop{Action: agent.LoopWarn},
 		},

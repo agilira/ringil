@@ -137,6 +137,10 @@ type cli struct {
 	shared bool
 	// events observe every run (serve logs their metadata).
 	events []agent.Observer
+	// traces is the process's tracer, shared by serve's runs; traceWarned
+	// whether its failure was said.
+	traces      *tracing
+	traceWarned *atomic.Bool
 	// metrics counts the served runs, for GET /metrics.
 	metrics *metrics.Metrics
 	// acceptEdits lets file writes and edits go without asking
@@ -222,6 +226,8 @@ func newCLI(in io.Reader, out, errOut io.Writer) *cli {
 		newSandbox:  sandbox.New,
 		cwd:         os.Getwd,
 		home:        os.UserHomeDir,
+		traces:      &tracing{},
+		traceWarned: &atomic.Bool{},
 	}
 }
 
@@ -379,7 +385,7 @@ func (c *cli) agent(ctx *orpheus.Context) (agent.Agent, error) {
 		// The model is told when it goes round in circles: small models
 		// need it, and the CLI runs them.
 		Loop:      agent.Loop{Action: agent.LoopWarn},
-		Observers: c.events,
+		Observers: c.observers(ctx.Context()),
 	})
 }
 

@@ -36,6 +36,7 @@ func main() {
 
 func run(ctx context.Context, args []string, c *cli) int {
 	defer func() { _ = c.secrets.Close() }() // #nosec G104 -- the stores opened; nothing to report at exit
+	defer c.flushTraces()
 	if err := c.app().RunContext(ctx, args); err != nil {
 		return report(c.errOut, err)
 	}
