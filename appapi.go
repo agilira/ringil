@@ -332,9 +332,15 @@ func (c *cli) secretStore(w http.ResponseWriter, r *http.Request, octx *orpheus.
 		fail(w, http.StatusInternalServerError, "SETTINGS_SECRETS", describe(err))
 		return nil, "", false
 	}
-	st, err := c.keyStore(r.Context(), base)
-	if err != nil || st == nil {
-		fail(w, http.StatusConflict, "SETTINGS_NO_STORE", "no secrets store is set up: choose one with ringil setup")
+	c.keepMu.Lock() // one store, even for two first keys at once
+	st, err := c.appStore(r.Context(), base)
+	c.keepMu.Unlock()
+	switch {
+	case err != nil:
+		fail(w, http.StatusInternalServerError, "SETTINGS_SECRETS", "no secrets store could be opened or set up: "+describe(err))
+		return nil, "", false
+	case st == nil:
+		fail(w, http.StatusConflict, "SETTINGS_NO_STORE", "serve runs without a configuration directory: no secrets store can be set up")
 		return nil, "", false
 	}
 	return st, name, true
@@ -498,7 +504,12 @@ func (f *config) clone() *config {
 
 // decodeJSON reads one JSON object of known fields, at most 64 KiB.
 func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
-	dec := json.NewDecoder(io.LimitReader(r.Body, 64<<10))
+	return decodeJSONLimit(w, r, v, 64<<10)
+}
+
+// decodeJSONLimit is decodeJSON for a body of at most limit bytes.
+func decodeJSONLimit(w http.ResponseWriter, r *http.Request, v any, limit int64) bool {
+	dec := json.NewDecoder(io.LimitReader(r.Body, limit))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil || dec.More() {
 		fail(w, http.StatusBadRequest, "SETTINGS_INPUT", "the body is not one JSON object of the expected fields")

@@ -77,7 +77,7 @@ func (c *cli) cmdServe(ctx *orpheus.Context) error {
 	if c.inContainer() {
 		c.note("  * in a container: listening on every interface of its network, answering the loopback and the host (" + c.peersText() + ") only")
 	}
-	c.appLink(srv, l.Addr().String())
+	c.appLink(ctx, srv, l.Addr().String())
 	return srv.Serve(run, l)
 }
 
@@ -139,6 +139,7 @@ func (c *cli) newServer(ctx *orpheus.Context) (*serve.Server, string, error) {
 	srv.Mount("GET /metrics", c.metrics.Handler()) // behind the token: the counts tell what the agents do
 	c.mountSettings(ctx, srv)
 	c.mountState(ctx, srv)
+	c.mountSetup(ctx, srv)
 	return srv, where, nil
 }
 
@@ -394,15 +395,20 @@ func (c *cli) voice(ctx *orpheus.Context) serve.Voice {
 // appLink tells how to open the app: its sign-in link in a terminal; in a
 // log (systemd's journal, a file) the link would be readable by others
 // for its ten minutes, so there only how to ask one with the token.
-func (c *cli) appLink(srv *serve.Server, addr string) {
+func (c *cli) appLink(ctx *orpheus.Context, srv *serve.Server, addr string) {
 	if c.conf().Serve.App == "" {
 		return
 	}
-	if f, ok := c.errOut.(*os.File); ok && term.IsTerminal(int(f.Fd())) { // #nosec G115 -- a file descriptor
-		c.note("app: http://" + loopbackOf(addr) + srv.SignInPath() + " (opens it once, within 10 minutes)")
-		return
+	terminal := c.logIsTerminal()
+	link := "http://" + loopbackOf(addr) + srv.SignInPath()
+	switch {
+	case c.wantsBrowser(ctx, terminal) && c.openURL(link) == nil:
+		c.note("app: opened in the browser; if it did not appear: " + link + " (once, within 10 minutes)")
+	case terminal:
+		c.note("app: " + link + " (opens it once, within 10 minutes)")
+	default:
+		c.note("app: http://" + loopbackOf(addr) + "/ ; its sign-in link: ringil serve link (in a container: docker exec <name> ringil serve link)")
 	}
-	c.note("app: http://" + loopbackOf(addr) + "/ ; its sign-in link: ringil serve link (in a container: docker exec <name> ringil serve link)")
 }
 
 // serveListener listens where serve does: on loopback, or anywhere in a
@@ -555,4 +561,17 @@ func (c *cli) peersText() string {
 		out[i] = p.String()
 	}
 	return strings.Join(out, ", ")
+}
+
+// logIsTerminal: serve's log is a terminal, which a person reads.
+func (c *cli) logIsTerminal() bool {
+	f, ok := c.errOut.(*os.File)
+	return ok && term.IsTerminal(int(f.Fd())) // #nosec G115 -- a file descriptor
+}
+
+// wantsBrowser: serve opens the app in the browser: started from a
+// terminal, or with --open (an installer); never in a container or with
+// --no-browser.
+func (c *cli) wantsBrowser(ctx *orpheus.Context, terminal bool) bool {
+	return !c.inContainer() && !c.flagBool(ctx, "no-browser") && (terminal || c.flagBool(ctx, "open"))
 }

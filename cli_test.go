@@ -53,6 +53,8 @@ func newHarness(t *testing.T, input string, steps ...fake.Step) *harness {
 	h.c.dataDir = func() (string, error) { return filepath.Join(h.dir, "data"), nil }
 	h.c.home = func() (string, error) { return "", os.ErrNotExist }
 	h.c.restart = func() {} // a test never starts itself again
+	h.c.openURL = func(string) error { return nil }
+	h.c.noKeyring = true // never the system's keyring of whoever runs the tests
 	return h
 }
 

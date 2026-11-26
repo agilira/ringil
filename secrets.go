@@ -42,6 +42,17 @@ type secretsConfig struct {
 	PassphraseEnv string `argus:"passphrase_env"`
 }
 
+// yaml is the section as ringil.yaml writes it: the keys set.
+func (s secretsConfig) yaml() map[string]interface{} {
+	out := map[string]interface{}{"store": s.Store}
+	for k, v := range map[string]string{"file": s.File, "passphrase_env": s.PassphraseEnv, "keyring_service": s.Service} {
+		if v != "" {
+			out[k] = v
+		}
+	}
+	return out
+}
+
 type vaultConfig struct {
 	URL       string `argus:"url"`
 	Mount     string `argus:"mount"`

@@ -100,7 +100,11 @@ type cli struct {
 	// restart starts the process again after it (a test's does not).
 	imports *importing
 	restart func()
-	inImage func() bool // the process runs in a container
+	inImage func() bool        // the process runs in a container
+	openURL func(string) error // opens a link in the user's browser
+	// noKeyring keeps the store set up for the app's first key off the
+	// system's keyring (tests).
+	noKeyring bool
 	// askMu keeps one question on screen at a time: workers run in
 	// parallel and may all need the user.
 	askMu sync.Mutex
@@ -217,6 +221,7 @@ func newCLI(in io.Reader, out, errOut io.Writer) *cli {
 		imports:      &importing{},
 		restart:      restart,
 		inImage:      inImage,
+		openURL:      openBrowser,
 		turnContext: func(ctx context.Context) (context.Context, context.CancelFunc) {
 			return signal.NotifyContext(ctx, os.Interrupt)
 		},
@@ -271,6 +276,8 @@ func (c *cli) app() *orpheus.App {
 		AddGlobalFlag("sessions-dir", "", "", "where sessions are stored (default: the user config directory)")
 	app.AddCommand(withWorkspace(orpheus.NewCommand("chat", "Talk to the agent; /reset clears the history, /exit quits").SetHandler(c.firstRun(c.withConfig(c.cmdChat)))))
 	app.AddCommand(withWorkspace(orpheus.NewCommand("serve", "Answer a local HTTP API (loopback only, bearer token) until Ctrl-C; each run gets its own agent; set up in the serve section of ringil.yaml").SetHandler(c.withConfig(c.cmdServe)).
+		AddBoolFlag("open", "", false, "open the app in the browser even without a terminal (an installer that starts serve)").
+		AddBoolFlag("no-browser", "", false, "never open the browser: only print how to sign in").
 		AddSubcommand(orpheus.NewCommand("link", "Print a sign-in link of the app of the serve running here").SetHandler(c.withConfig(c.cmdServeLink)))))
 	app.AddCommand(withWorkspace(orpheus.NewCommand("run", "Send one prompt and print the answer").SetHandler(c.withConfig(c.cmdRun)).
 		SetUsage("run <prompt...>")))
@@ -828,7 +835,7 @@ func (c *cli) notesMustAsk(ctx context.Context, call agent.ToolCall) bool {
 // only through their tools and commands, which ask.
 var ownStateExcluded = append(slices.Clone(files.DefaultExclude),
 	"ringil/triggers", "ringil/skills", "ringil/ringil.yaml", "ringil/serve-token",
-	"ringil/telegram-phones.json", "ringil/telegram-sessions.json")
+	"ringil/telegram-phones.json", "ringil/telegram-sessions.json", "ringil/instructions.md", "ringil/secrets")
 
 // showCall shows, before asking, what a call would do in full when a
 // line cannot: a workflow's plan, a skill's instructions.
@@ -1049,13 +1056,13 @@ func (c *cli) baseResolver(ctx *orpheus.Context) (secrets.Resolver, error) {
 	env := secrets.Resolver(lookupEnv{c.getenv})
 	path := ctx.GetGlobalFlagString("env-file")
 	if path == "" {
-		return env, nil
+		return c.withKeyFile(env)
 	}
 	file, err := secrets.EnvFile(path)
 	if err != nil {
 		return nil, err
 	}
-	return secrets.Chain(env, file), nil
+	return c.withKeyFile(secrets.Chain(env, file)) // the passphrase ringil made for its own store, last
 }
 
 // setting returns a flag, or else the named value from the resolver, or

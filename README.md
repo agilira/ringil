@@ -49,7 +49,20 @@ indirizzo dell'API, e all'avvio `ringil serve` stampa il link per entrare (monou
 L'app usa le API di `serve` e quelle delle impostazioni (`/v1/settings`): modelli in ordine,
 limiti di costo, connessioni, chiavi (si scrivono, non si rileggono), server MCP, skill.
 Ogni modifica è controllata sul file intero prima di finire in ringil.yaml.
-Il link si chiede anche dopo, a serve avviato: `ringil serve link`.
+Avviato da un terminale (o con `--open`, come fa un installer) `ringil serve` apre l'app nel
+browser già dentro; `--no-browser` stampa solo il link. Il link si chiede anche dopo, a serve
+avviato: `ringil serve link`.
+
+Primo avvio dall'app: `GET /v1/setup` dice cosa manca (un modello, la sua chiave, le istruzioni
+dell'utente); `PUT /v1/settings/models`, `PUT /v1/settings/secrets/{NOME}` e
+`PUT /v1/settings/instructions` bastano. Le istruzioni dell'utente si aggiungono al prompt di
+ringil, non lo sostituiscono (un file, `<config>/ringil/instructions.md` se ringil.yaml non ne
+nomina uno). Alla prima chiave, se nessuno store dei segreti è configurato, ringil ne prepara
+uno: il keyring del sistema dove funziona, altrimenti il file cifrato in
+`<config>/ringil/secrets/` con una passphrase che crea lì (un container, una macchina senza
+sessione grafica): accanto al file, protegge solo quando il file viene copiato da solo, non da
+chi legge tutta la cartella, come un file privato. Né le chiavi né la passphrase entrano in un
+export, e gli strumenti sui file dell'agente non le vedono.
 
 In Docker:
 

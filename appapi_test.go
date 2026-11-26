@@ -111,7 +111,7 @@ func TestSettingsWrite(t *testing.T) {
 			{"PUT", "/v1/settings/models", `{"models":["openai:big"],"admin":true}`, http.StatusBadRequest},
 			{"DELETE", "/v1/settings/providers/nope", "", http.StatusNotFound},
 			{"DELETE", "/v1/settings/mcp_servers/nope", "", http.StatusNotFound},
-			{"PUT", "/v1/settings/secrets/OPENAI_API_KEY", `{"value":"x"}`, http.StatusConflict}, // no store set up
+			{"PUT", "/v1/settings/secrets/OPENAI_API_KEY", `{"value":"x"}`, http.StatusNoContent}, // no store set up: one is made
 			{"PUT", "/v1/settings/secrets/bad name", `{"value":"x"}`, http.StatusBadRequest},
 		} {
 			if code, out := call(c.method, c.path, c.body); code != c.code {
