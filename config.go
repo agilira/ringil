@@ -175,6 +175,10 @@ type serveConfig struct {
 	Replies       string         `argus:"replies"`
 	Telegram      telegramConfig `argus:"telegram"`
 	Slack         slackConfig    `argus:"slack"`
+	// App is a folder holding a browser app's build (its index.html),
+	// served at the address with the API; a relative path is from the
+	// directory of ringil.yaml.
+	App string `argus:"app"`
 }
 
 // slackConfig is who the Slack app talks with, by member ID (U…); its
@@ -344,6 +348,7 @@ func (s serveConfig) check() error {
 func (f config) from(dir string) *config {
 	f.Instructions = fromDir(dir, f.Instructions)
 	f.SessionsDir = fromDir(dir, f.SessionsDir)
+	f.Serve.App = fromDir(dir, f.Serve.App)
 	profiles := make(map[string]profile, len(f.Profiles))
 	for name, p := range f.Profiles {
 		profiles[name] = p.from(dir)

@@ -73,6 +73,9 @@ func (c *cli) cmdServe(ctx *orpheus.Context) error {
 	}
 	defer stopAll()
 	c.note("serving on http://" + l.Addr().String() + "/v1/ ; bearer token " + where)
+	if link := srv.SignInPath(); link != "" {
+		c.note("app: http://" + l.Addr().String() + link + " (opens it once, within 10 minutes)")
+	}
 	return srv.Serve(run, l)
 }
 
@@ -115,11 +118,16 @@ func (c *cli) newServer(ctx *orpheus.Context) (*serve.Server, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	srv, err := serve.New(serve.Config{Token: token, Store: store, MaxRuns: c.conf().Serve.maxRuns(), Profiles: profiles})
+	app, err := appFiles(c.conf().Serve.App)
+	if err != nil {
+		return nil, "", err
+	}
+	srv, err := serve.New(serve.Config{Token: token, Store: store, MaxRuns: c.conf().Serve.maxRuns(), Profiles: profiles, App: app, Voice: c.voice(ctx)})
 	if err != nil {
 		return nil, "", err
 	}
 	srv.Mount("GET /metrics", c.metrics.Handler()) // behind the token: the counts tell what the agents do
+	c.mountSettings(ctx, srv)
 	return srv, where, nil
 }
 
@@ -336,5 +344,38 @@ func newToken(root *os.Root) (string, error) {
 func closeQuietly(c io.Closer) {
 	if err := c.Close(); err != nil {
 		return
+	}
+}
+
+// appFiles is the app's folder, when serve.app names one: it must hold
+// the app's index.html.
+func appFiles(dir string) (fs.FS, error) {
+	if dir == "" {
+		return nil, nil
+	}
+	if info, err := os.Stat(filepath.Join(dir, "index.html")); err != nil || !info.Mode().IsRegular() {
+		return nil, errors.New(ErrUsage, "serve.app: "+dir+" holds no index.html (the app's build)")
+	}
+	return os.DirFS(dir), nil
+}
+
+// voice is the app's speech to text and text to speech: the models of
+// transcribe: and speech: as they are when it asks.
+func (c *cli) voice(ctx *orpheus.Context) serve.Voice {
+	return serve.Voice{
+		Transcriber: func(context.Context) (agent.Transcriber, error) {
+			res, err := c.resolver(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return c.transcriber(ctx, res)
+		},
+		Synthesizer: func(context.Context) (agent.Synthesizer, error) {
+			res, err := c.resolver(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return c.synthesizer(ctx, res)
+		},
 	}
 }

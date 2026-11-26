@@ -199,11 +199,7 @@ func (c *cli) chain(ctx *orpheus.Context, res secrets.Resolver, list []modelRef)
 
 // reachable: ep needs no key, or its key is there.
 func (c *cli) reachable(ctx *orpheus.Context, res secrets.Resolver, ep endpoint) bool {
-	if ep.kind == providerChatGPT || ep.keyName == "" {
-		return true
-	}
-	key, err := keyFunc(res, ep.keyName)(ctx.Context())
-	return err == nil && key != ""
+	return c.reachableIn(ctx.Context(), res, ep)
 }
 
 // switched tells the terminal which model answers now.

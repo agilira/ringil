@@ -44,6 +44,12 @@ diventa una traccia OpenTelemetry: chiamate al modello con token e costo, strume
 mai il testo della conversazione. Anche ogni revisione di ringil.yaml (caricata, applicata,
 rifiutata) è uno span, con le chiavi cambiate e mai i valori.
 
+`serve.app` in ringil.yaml (la cartella della build di un'app web) la serve sullo stesso
+indirizzo dell'API, e all'avvio `ringil serve` stampa il link per entrare (monouso, 10 minuti).
+L'app usa le API di `serve` e quelle delle impostazioni (`/v1/settings`): modelli in ordine,
+limiti di costo, connessioni, chiavi (si scrivono, non si rileggono), server MCP, skill.
+Ogni modifica è controllata sul file intero prima di finire in ringil.yaml.
+
 ```yaml
 models:
   - anthropic:claude-opus-5-5
