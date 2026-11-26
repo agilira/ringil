@@ -100,6 +100,7 @@ type cli struct {
 	// restart starts the process again after it (a test's does not).
 	imports *importing
 	restart func()
+	inImage func() bool // the process runs in a container
 	// askMu keeps one question on screen at a time: workers run in
 	// parallel and may all need the user.
 	askMu sync.Mutex
@@ -215,6 +216,7 @@ func newCLI(in io.Reader, out, errOut io.Writer) *cli {
 		signIns:      &signIns{},
 		imports:      &importing{},
 		restart:      restart,
+		inImage:      inImage,
 		turnContext: func(ctx context.Context) (context.Context, context.CancelFunc) {
 			return signal.NotifyContext(ctx, os.Interrupt)
 		},
@@ -268,7 +270,8 @@ func (c *cli) app() *orpheus.App {
 		AddGlobalFlag("session", "S", "", "save the conversation under this name and resume it next time").
 		AddGlobalFlag("sessions-dir", "", "", "where sessions are stored (default: the user config directory)")
 	app.AddCommand(withWorkspace(orpheus.NewCommand("chat", "Talk to the agent; /reset clears the history, /exit quits").SetHandler(c.firstRun(c.withConfig(c.cmdChat)))))
-	app.AddCommand(withWorkspace(orpheus.NewCommand("serve", "Answer a local HTTP API (loopback only, bearer token) until Ctrl-C; each run gets its own agent; set up in the serve section of ringil.yaml").SetHandler(c.withConfig(c.cmdServe))))
+	app.AddCommand(withWorkspace(orpheus.NewCommand("serve", "Answer a local HTTP API (loopback only, bearer token) until Ctrl-C; each run gets its own agent; set up in the serve section of ringil.yaml").SetHandler(c.withConfig(c.cmdServe)).
+		AddSubcommand(orpheus.NewCommand("link", "Print a sign-in link of the app of the serve running here").SetHandler(c.withConfig(c.cmdServeLink)))))
 	app.AddCommand(withWorkspace(orpheus.NewCommand("run", "Send one prompt and print the answer").SetHandler(c.withConfig(c.cmdRun)).
 		SetUsage("run <prompt...>")))
 	app.AddCommand(orpheus.NewCommand("sessions", "List saved sessions").SetHandler(c.withConfig(c.cmdSessions)).

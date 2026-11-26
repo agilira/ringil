@@ -179,6 +179,14 @@ type serveConfig struct {
 	// served at the address with the API; a relative path is from the
 	// directory of ringil.yaml.
 	App string `argus:"app"`
+	// Container: serve runs in a container (also RINGIL_CONTAINER=1, as
+	// the image sets): it listens on every interface of the container's
+	// own network, by default 0.0.0.0:8765. Publish the port on the
+	// host's loopback only: docker run -p 127.0.0.1:8765:8765.
+	Container bool `argus:"container"`
+	// Peers are the networks (CIDR) serve answers in a container besides
+	// the loopback; default the container's gateway, which is the host.
+	Peers []string `argus:"peers"`
 }
 
 // slackConfig is who the Slack app talks with, by member ID (U…); its
@@ -200,6 +208,7 @@ type telegramConfig struct {
 // Defaults of serve, for what the file leaves out.
 const (
 	defaultListen     = "127.0.0.1:8765"
+	containerListen   = "0.0.0.0:8765"
 	defaultMaxRuns    = 4
 	defaultMaxPerHour = 30
 )

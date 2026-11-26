@@ -61,3 +61,40 @@ func checkPrivateToken(t *testing.T, c *cli, path string) {
 		t.Fatal("a token readable by others was used")
 	}
 }
+
+// In a container serve listens on every interface by default, and the
+// link and the log name the loopback the host reaches it on.
+func TestServeInAContainer(t *testing.T) {
+	h := newHarness(t, "")
+	if h.c.inContainer() || h.c.serveListen() != defaultListen {
+		t.Fatal("a container outside one")
+	}
+	env(h, map[string]string{"RINGIL_CONTAINER": "1"})
+	h.c.inImage = func() bool { return false }
+	if h.c.inContainer() {
+		t.Fatal("the variable alone, on a desktop, made it a container")
+	}
+	h.c.inImage = func() bool { return true }
+	if !h.c.inContainer() || h.c.serveListen() != containerListen {
+		t.Fatalf("in a container: %v %s", h.c.inContainer(), h.c.serveListen())
+	}
+	checkContainerAddresses(t)
+	for in, want := range map[string]string{"0.0.0.0:8765": "127.0.0.1:8765", "[::]:9": "127.0.0.1:9", "127.0.0.1:1": "127.0.0.1:1", ":7": "127.0.0.1:7"} {
+		if got := loopbackOf(in); got != want {
+			t.Errorf("%s: %s, want %s", in, got, want)
+		}
+	}
+}
+
+// checkContainerAddresses: the link goes to this machine's loopback, the
+// host is the route table's gateway.
+func checkContainerAddresses(t *testing.T) {
+	t.Helper()
+	if got := localOf("10.0.0.9:9999"); got != "127.0.0.1:9999" {
+		t.Fatalf("the link would go to %s", got)
+	}
+	table := "Iface\tDestination\tGateway\tFlags\neth0\t00000000\t010011AC\t0003\neth0\t000011AC\t00000000\t0001\n"
+	if gw, ok := gatewayOf(table); !ok || gw.String() != "172.17.0.1" {
+		t.Fatalf("gateway %v %v", gw, ok)
+	}
+}

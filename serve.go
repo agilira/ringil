@@ -8,16 +8,21 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
 	stderrors "errors"
 	"io"
 	"io/fs"
 	"log/slog"
 	"net"
+	"net/http"
+	"net/netip"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -43,15 +48,9 @@ const tokenFile = "serve-token"
 // chat would confirm wait for a decision through the API.
 func (c *cli) cmdServe(ctx *orpheus.Context) error {
 	defer c.shutdown()
-	listen := c.conf().Serve.listen()
-	l, err := net.Listen("tcp", listen)
+	l, err := c.serveListener()
 	if err != nil {
-		return errors.Wrap(err, ErrUsage, "cannot listen on "+listen)
-	}
-	if addr, ok := l.Addr().(*net.TCPAddr); !ok || !addr.IP.IsLoopback() {
-		// Checked again by Serve; here before anything starts (a job).
-		closeQuietly(l)
-		return errors.New(ErrUsage, "serve listens on loopback only (127.0.0.1 or ::1), not "+listen)
+		return err
 	}
 	c.serveBoard()
 	srv, where, err := c.newServer(ctx)
@@ -75,6 +74,9 @@ func (c *cli) cmdServe(ctx *orpheus.Context) error {
 	}
 	defer stopAll()
 	c.note("serving on http://" + l.Addr().String() + "/v1/ ; bearer token " + where)
+	if c.inContainer() {
+		c.note("  * in a container: listening on every interface of its network, answering the loopback and the host (" + c.peersText() + ") only")
+	}
 	c.appLink(srv, l.Addr().String())
 	return srv.Serve(run, l)
 }
@@ -126,7 +128,11 @@ func (c *cli) newServer(ctx *orpheus.Context) (*serve.Server, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	srv, err := serve.New(serve.Config{Token: token, Store: store, MaxRuns: c.conf().Serve.maxRuns(), Profiles: profiles, App: app, Voice: c.voice(ctx), Artifacts: arts})
+	peers, err := c.servePeers()
+	if err != nil {
+		return nil, "", err
+	}
+	srv, err := serve.New(serve.Config{Token: token, Store: store, MaxRuns: c.conf().Serve.maxRuns(), Profiles: profiles, App: app, Voice: c.voice(ctx), Artifacts: arts, Container: c.inContainer(), Peers: peers})
 	if err != nil {
 		return nil, "", err
 	}
@@ -393,8 +399,160 @@ func (c *cli) appLink(srv *serve.Server, addr string) {
 		return
 	}
 	if f, ok := c.errOut.(*os.File); ok && term.IsTerminal(int(f.Fd())) { // #nosec G115 -- a file descriptor
-		c.note("app: http://" + addr + srv.SignInPath() + " (opens it once, within 10 minutes)")
+		c.note("app: http://" + loopbackOf(addr) + srv.SignInPath() + " (opens it once, within 10 minutes)")
 		return
 	}
-	c.note("app: http://" + addr + "/ ; sign-in link: POST /v1/signin-links with the bearer token")
+	c.note("app: http://" + loopbackOf(addr) + "/ ; its sign-in link: ringil serve link (in a container: docker exec <name> ringil serve link)")
+}
+
+// serveListener listens where serve does: on loopback, or anywhere in a
+// container. Serve checks it again; here before anything starts (a job).
+func (c *cli) serveListener() (net.Listener, error) {
+	listen := c.serveListen()
+	l, err := net.Listen("tcp", listen)
+	if err != nil {
+		return nil, errors.Wrap(err, ErrUsage, "cannot listen on "+listen)
+	}
+	if addr, ok := l.Addr().(*net.TCPAddr); !ok || (!addr.IP.IsLoopback() && !c.inContainer()) {
+		closeQuietly(l)
+		return nil, errors.New(ErrUsage, "serve listens on loopback only (127.0.0.1 or ::1), not "+listen+"; in a container set serve.container (or RINGIL_CONTAINER=1)")
+	}
+	return l, nil
+}
+
+// inContainer: serve runs in a container: serve.container, or
+// RINGIL_CONTAINER=1 (as the image sets) inside one, never on a desktop
+// whose environment happens to carry it.
+func (c *cli) inContainer() bool {
+	v := strings.TrimSpace(c.getenv("RINGIL_CONTAINER"))
+	return c.conf().Serve.Container || ((v == "1" || strings.EqualFold(v, "true")) && c.inImage != nil && c.inImage())
+}
+
+// inImage says whether the process runs in a container, by the marks
+// Docker and Podman leave.
+func inImage() bool {
+	for _, mark := range []string{"/.dockerenv", "/run/.containerenv"} {
+		if _, err := os.Stat(mark); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// servePeers are the networks serve answers in a container: serve.peers,
+// else the container's default gateway (the host).
+func (c *cli) servePeers() ([]netip.Prefix, error) {
+	var out []netip.Prefix
+	for _, p := range c.conf().Serve.Peers {
+		prefix, err := netip.ParsePrefix(strings.TrimSpace(p))
+		if err != nil {
+			return nil, errors.New(ErrUsage, "serve.peers: "+p+" is not a network such as 172.17.0.1/32")
+		}
+		out = append(out, prefix)
+	}
+	if len(out) == 0 {
+		if gw, ok := defaultGateway(); ok {
+			out = append(out, netip.PrefixFrom(gw, gw.BitLen()))
+		}
+	}
+	return out, nil
+}
+
+// defaultGateway is the IPv4 default gateway from /proc/net/route (a
+// Linux container), which is how the host reaches the container.
+func defaultGateway() (netip.Addr, bool) {
+	data, err := os.ReadFile("/proc/net/route")
+	if err != nil {
+		return netip.Addr{}, false
+	}
+	return gatewayOf(string(data))
+}
+
+// gatewayOf reads the route table's default route: destination 0, its
+// gateway in little-endian hex.
+func gatewayOf(table string) (netip.Addr, bool) {
+	for _, line := range strings.Split(table, "\n")[1:] {
+		f := strings.Fields(line)
+		if len(f) < 3 || f[1] != "00000000" {
+			continue
+		}
+		raw, err := hex.DecodeString(f[2])
+		if err != nil || len(raw) != 4 || (raw[0]|raw[1]|raw[2]|raw[3]) == 0 {
+			continue
+		}
+		return netip.AddrFrom4([4]byte{raw[3], raw[2], raw[1], raw[0]}), true // little-endian
+	}
+	return netip.Addr{}, false
+}
+
+// serveListen is where serve listens: ringil.yaml's, else the default of
+// where it runs.
+func (c *cli) serveListen() string {
+	if c.conf().Serve.Listen == "" && c.inContainer() {
+		return containerListen
+	}
+	return c.conf().Serve.listen()
+}
+
+// cmdServeLink asks the serve running here for a sign-in link of its app
+// and prints it: for a serve whose log is not a terminal (a service, a
+// container: docker exec ringil ringil serve link).
+func (c *cli) cmdServeLink(ctx *orpheus.Context) error {
+	token, _, err := c.serveToken(ctx)
+	if err != nil {
+		return err
+	}
+	addr := localOf(c.serveListen()) // always this machine's loopback: the token goes nowhere else
+	req, err := http.NewRequestWithContext(ctx.Context(), http.MethodPost, "http://"+addr+"/v1/signin-links", nil)
+	if err != nil {
+		return errors.Wrap(err, ErrUsage, "bad serve address "+addr)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := http.DefaultClient.Do(req) // #nosec G704 -- serve on this machine's loopback
+	if err != nil {
+		return errors.Wrap(err, ErrUsage, "no serve answers on "+addr+": start it with ringil serve")
+	}
+	defer closeQuietly(resp.Body)
+	var out struct {
+		Path string `json:"path"`
+	}
+	if resp.StatusCode != http.StatusCreated || json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&out) != nil || !strings.HasPrefix(out.Path, "/signin?") {
+		return errors.New(ErrUsage, "serve gave no sign-in link (status "+strconv.Itoa(resp.StatusCode)+"): is serve.app set?")
+	}
+	return c.line("http://" + addr + out.Path + "  (opens the app once, within 10 minutes)")
+}
+
+// localOf is serve's port on this machine's loopback, whatever host
+// listen names.
+func localOf(listen string) string {
+	_, port, err := net.SplitHostPort(listen)
+	if err != nil {
+		port = "8765"
+	}
+	return net.JoinHostPort("127.0.0.1", port)
+}
+
+// loopbackOf is listen as this machine reaches it: an address on every
+// interface is reached on 127.0.0.1.
+func loopbackOf(listen string) string {
+	host, port, err := net.SplitHostPort(listen)
+	if err != nil {
+		return listen
+	}
+	if ip := net.ParseIP(host); host == "" || (ip != nil && ip.IsUnspecified()) {
+		host = "127.0.0.1"
+	}
+	return net.JoinHostPort(host, port)
+}
+
+func (c *cli) peersText() string {
+	peers, _ := c.servePeers()
+	if len(peers) == 0 {
+		return "no gateway found: the loopback only"
+	}
+	out := make([]string, len(peers))
+	for i, p := range peers {
+		out[i] = p.String()
+	}
+	return strings.Join(out, ", ")
 }

@@ -81,6 +81,7 @@ func (c *cli) exportState(ctx *orpheus.Context, srv *serve.Server) http.HandlerF
 			return
 		}
 		defer resume()
+		_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(time.Hour)) // an archive of gigabytes
 		w.Header().Set("Content-Type", "application/gzip")
 		w.Header().Set("Content-Disposition", `attachment; filename="ringil-`+time.Now().Format("20060102-1504")+`.tar.gz"`)
 		w.WriteHeader(http.StatusOK)
@@ -183,6 +184,8 @@ func (c *cli) receiveArchive(w http.ResponseWriter, r *http.Request) (string, er
 	if err != nil {
 		return "", err
 	}
+	// An archive of gigabytes takes longer than the server's read bound.
+	_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(time.Hour))
 	_, err = io.Copy(f, http.MaxBytesReader(w, r.Body, backup.MaxTotal))
 	if cerr := f.Close(); err == nil {
 		err = cerr

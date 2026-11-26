@@ -49,6 +49,22 @@ indirizzo dell'API, e all'avvio `ringil serve` stampa il link per entrare (monou
 L'app usa le API di `serve` e quelle delle impostazioni (`/v1/settings`): modelli in ordine,
 limiti di costo, connessioni, chiavi (si scrivono, non si rileggono), server MCP, skill.
 Ogni modifica è controllata sul file intero prima di finire in ringil.yaml.
+Il link si chiede anche dopo, a serve avviato: `ringil serve link`.
+
+In Docker:
+
+```sh
+docker build -t ringil .
+docker run -d --name ringil -p 127.0.0.1:8765:8765 -v ringil:/data ringil
+docker exec ringil ringil serve link
+```
+
+Nel container serve ascolta su tutte le sue interfacce (`serve.container`, o
+`RINGIL_CONTAINER=1` dentro un container, come imposta l'immagine) ma risponde solo al
+loopback e all'host, cioè al gateway del container (`serve.peers` per cambiarlo): un altro
+container sulla rete, o la LAN se la porta è pubblicata per errore su tutte le interfacce,
+è rifiutato prima del token. La porta va pubblicata solo sul loopback dell'host. Lo stato sta
+nel volume `/data`, che sopravvive al container e agli aggiornamenti.
 
 ```yaml
 models:
