@@ -7,14 +7,21 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/agilira/go-errors"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+
+	agent "github.com/agilira/ringil-agent-sdk"
+	ringilotel "github.com/agilira/ringil-agent-sdk/otel"
 
 	"github.com/agilira/ringil-agent-sdk/provider/fake"
 )
@@ -82,8 +89,8 @@ func TestBadEndpointIsSaid(t *testing.T) {
 }
 
 func TestParseHeaders(t *testing.T) {
-	got := parseHeaders(" a = 1 ,b=x%3Dy,,=skip,c")
-	if len(got) != 2 || got["a"] != "1" || got["b"] != "x=y" {
+	got := parseHeaders(" a = 1 ,b=x%3Dy,,=skip,c,auth=Basic%20dXNlcjpw+YQ==")
+	if len(got) != 3 || got["a"] != "1" || got["b"] != "x=y" || got["auth"] != "Basic dXNlcjpw+YQ==" {
 		t.Fatalf("%v", got)
 	}
 }
@@ -95,7 +102,8 @@ func TestTraceEndpointVariables(t *testing.T) {
 		{"https://otel.example.com:4318", ""}:                        "https://otel.example.com:4318/v1/traces",
 		{"https://gw.example.com/otlp/", ""}:                         "https://gw.example.com/otlp/v1/traces",
 		{"https://base.example.com", "https://t.example.com/ingest"}: "https://t.example.com/ingest",
-		{"", ""}: "",
+		{"https://gw.example.com/a%2Fb", ""}:                         "https://gw.example.com/a%2Fb/v1/traces",
+		{"", ""}:                                                     "",
 	} {
 		h := newHarness(t, "")
 		env(h, map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": vars[0], "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": vars[1]})
@@ -138,5 +146,66 @@ func TestChangedKeys(t *testing.T) {
 	}
 	if got := changedKeys(a, a); len(got) != 0 {
 		t.Fatalf("%v", got)
+	}
+}
+
+// OTEL_SDK_DISABLED and OTEL_TRACES_EXPORTER=none turn the traces off
+// over an endpoint set elsewhere; a protocol other than http/protobuf is
+// said, not sent nowhere.
+func TestTracesOffAndProtocol(t *testing.T) {
+	for _, off := range []map[string]string{{"OTEL_SDK_DISABLED": "TRUE"}, {"OTEL_TRACES_EXPORTER": "none"}} {
+		h := newHarness(t, "")
+		off["OTEL_EXPORTER_OTLP_ENDPOINT"] = "https://otel.example.com"
+		env(h, off)
+		if got, _ := h.c.traceEndpoint(); got != "" {
+			t.Errorf("%v: %s", off, got)
+		}
+	}
+	h := newHarness(t, "", fake.Reply("ok"))
+	env(h, map[string]string{"RINGIL_PROVIDER": "openai", "RINGIL_MODEL": "m", "OPENAI_API_KEY": "k",
+		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:4317", "OTEL_EXPORTER_OTLP_PROTOCOL": "grpc"})
+	if code := h.run("run", "x"); code != exitOK || !strings.Contains(h.err.String(), "http/protobuf") {
+		t.Fatalf("exit %d %q", code, h.err)
+	}
+}
+
+// Every observer of the process records on one Recorder: a worker's run,
+// seen through the crew's observers, goes under the chat's call.
+func TestObserversShareTheRecorder(t *testing.T) {
+	srv, _, _ := collector(t)
+	h := newHarness(t, "")
+	env(h, map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": srv.URL})
+	exp := tracetest.NewInMemoryExporter()
+	if tp, err := h.c.tracer(context.Background()); tp == nil || err != nil {
+		t.Fatalf("%v %v", tp, err)
+	}
+	h.c.traces.rec = ringilotel.New(sdktrace.NewTracerProvider(sdktrace.WithSyncer(exp)).Tracer("t"))
+	lead, crew := last(h.c.observers(context.Background())), last(h.c.observers(context.Background()))
+	lead(agent.Event{Kind: agent.EventStarted, Run: "p", Time: time.Now()})
+	lead(agent.Event{Kind: agent.EventToolStart, Run: "p", Call: &agent.ToolCall{ID: "c", Name: "delegate"}, Time: time.Now()})
+	crew(agent.Event{Kind: agent.EventStarted, Run: "w", Parent: "p", ParentCall: "c", Worker: "explore", Time: time.Now()})
+	crew(agent.Event{Kind: agent.EventDone, Run: "w", Time: time.Now()})
+	lead(agent.Event{Kind: agent.EventToolEnd, Run: "p", Call: &agent.ToolCall{ID: "c", Name: "delegate"}, Time: time.Now()})
+	lead(agent.Event{Kind: agent.EventDone, Run: "p", Time: time.Now()})
+	var call, worker tracetest.SpanStub
+	for _, s := range exp.GetSpans() {
+		switch s.Name {
+		case "execute_tool delegate":
+			call = s
+		case "invoke_agent explore":
+			worker = s
+		}
+	}
+	if worker.Parent.SpanID() != call.SpanContext.SpanID() || !call.SpanContext.IsValid() {
+		t.Fatalf("worker under %v, call %v", worker.Parent.SpanID(), call.SpanContext.SpanID())
+	}
+}
+
+func last(obs []agent.Observer) agent.Observer { return obs[len(obs)-1] }
+
+// An endpoint with a query is refused: the exporter would drop it.
+func TestTraceEndpointQueryRefused(t *testing.T) {
+	if _, err := tracesURL("https://gw.example.com/v1/traces?token=x"); err == nil || !strings.Contains(err.Error(), "query") {
+		t.Fatalf("%v", err)
 	}
 }

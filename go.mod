@@ -18,6 +18,7 @@ require (
 	go.opentelemetry.io/otel v1.47.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.47.0
 	go.opentelemetry.io/otel/sdk v1.47.0
+	go.opentelemetry.io/otel/trace v1.47.0
 	golang.org/x/net v0.60.0
 	golang.org/x/term v0.48.0
 )
@@ -26,7 +27,7 @@ require (
 	github.com/a2aproject/a2a-go/v2 v2.8.0 // indirect
 	github.com/agilira/flash-flags v1.3.5 // indirect
 	github.com/agilira/go-timecache v1.0.4 // indirect
-	github.com/agilira/pdf v0.0.0-20261125221849-3f8b7a3968a6 // indirect
+	github.com/agilira/pdf v0.0.0-20261126025143-c7c2ed834228 // indirect
 	github.com/agilira/ringil-agent-sdk/secrets/keyring v0.0.0 // indirect
 	github.com/anthropics/anthropic-sdk-go/v2 v2.13.0 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
@@ -59,7 +60,6 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.47.0 // indirect
 	go.opentelemetry.io/otel/log v1.47.0 // indirect
 	go.opentelemetry.io/otel/metric v1.47.0 // indirect
-	go.opentelemetry.io/otel/trace v1.47.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
 	go.yaml.in/yaml/v4 v4.0.0 // indirect
 	golang.org/x/mod v0.42.0 // indirect

@@ -176,3 +176,53 @@ func TestServeVoiceFollowsTheSettings(t *testing.T) {
 		return nil
 	})
 }
+
+// Changes one after the other are each checked on the file as the one
+// before left it, not on the revision read seconds ago.
+func TestSettingsCheckTheFileOnDisk(t *testing.T) {
+	yaml := "models: [openai:m]\nproviders:\n  mine: {kind: openai, base: \"https://llm.example.com/v1\", key_env: MINE_KEY}\n"
+	settingsAPI(t, yaml, map[string]string{"OPENAI_API_KEY": "k", "MINE_KEY": "k"}, func(call func(string, string, string) (int, string), path string) {
+		if code, out := call("DELETE", "/v1/settings/providers/mine", ""); code != http.StatusNoContent {
+			t.Fatalf("delete %d %s", code, out)
+		}
+		if code, out := call("PUT", "/v1/settings/models", `{"models":["mine:m"]}`); code != http.StatusBadRequest {
+			t.Fatalf("a model of the provider just deleted: %d %s", code, out)
+		}
+		if code, out := call("PUT", "/v1/settings/models", `{"models":["openai:a","openai:b"]}`); code != http.StatusNoContent {
+			t.Fatalf("%d %s", code, out)
+		}
+		fileHas(t, path, "openai:a", "openai:b")
+	})
+}
+
+// A file broken by hand is not changed on top: it is said.
+func TestSettingsRefuseABrokenFile(t *testing.T) {
+	settingsAPI(t, "models: [openai:m]\n", map[string]string{"OPENAI_API_KEY": "k"}, func(call func(string, string, string) (int, string), path string) {
+		if err := os.WriteFile(path, []byte("models: [nowhere:m]\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		code, out := call("PUT", "/v1/settings/limits", `{"max_cost":1}`)
+		if code != http.StatusConflict || !strings.Contains(out, "not valid") {
+			t.Fatalf("%d %s", code, out)
+		}
+		fileHas(t, path, "nowhere:m")
+	})
+}
+
+// The same MCP server twice: the second is refused, not merged.
+func TestSettingsMCPTwice(t *testing.T) {
+	settingsAPI(t, "models: [openai:m]\n", map[string]string{"OPENAI_API_KEY": "k"}, func(call func(string, string, string) (int, string), path string) {
+		first := `{"name":"docs","url":"http://127.0.0.1:1/mcp","headers":{"Authorization":"Bearer ${DOCS_TOKEN}"}}`
+		if code, out := call("POST", "/v1/settings/mcp_servers", first); code != http.StatusCreated {
+			t.Fatalf("first %d %s", code, out)
+		}
+		second := `{"name":"docs","command":["echo"]}`
+		if code, out := call("POST", "/v1/settings/mcp_servers", second); code != http.StatusConflict {
+			t.Fatalf("second %d %s", code, out)
+		}
+		b, _ := os.ReadFile(path)
+		if strings.Contains(string(b), "echo") {
+			t.Fatalf("merged:\n%s", b)
+		}
+	})
+}

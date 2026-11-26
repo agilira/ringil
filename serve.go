@@ -23,6 +23,7 @@ import (
 
 	"github.com/agilira/go-errors"
 	"github.com/agilira/orpheus/pkg/orpheus"
+	"golang.org/x/term"
 
 	agent "github.com/agilira/ringil-agent-sdk"
 	"github.com/agilira/ringil-agent-sdk/a2a"
@@ -73,9 +74,7 @@ func (c *cli) cmdServe(ctx *orpheus.Context) error {
 	}
 	defer stopAll()
 	c.note("serving on http://" + l.Addr().String() + "/v1/ ; bearer token " + where)
-	if link := srv.SignInPath(); link != "" {
-		c.note("app: http://" + l.Addr().String() + link + " (opens it once, within 10 minutes)")
-	}
+	c.appLink(srv, l.Addr().String())
 	return srv.Serve(run, l)
 }
 
@@ -378,4 +377,18 @@ func (c *cli) voice(ctx *orpheus.Context) serve.Voice {
 			return c.synthesizer(ctx, res)
 		},
 	}
+}
+
+// appLink tells how to open the app: its sign-in link in a terminal; in a
+// log (systemd's journal, a file) the link would be readable by others
+// for its ten minutes, so there only how to ask one with the token.
+func (c *cli) appLink(srv *serve.Server, addr string) {
+	if c.conf().Serve.App == "" {
+		return
+	}
+	if f, ok := c.errOut.(*os.File); ok && term.IsTerminal(int(f.Fd())) { // #nosec G115 -- a file descriptor
+		c.note("app: http://" + addr + srv.SignInPath() + " (opens it once, within 10 minutes)")
+		return
+	}
+	c.note("app: http://" + addr + "/ ; sign-in link: POST /v1/signin-links with the bearer token")
 }

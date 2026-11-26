@@ -57,11 +57,40 @@ func entryOf(e mcp.Entry) mcpEntry {
 	return m
 }
 
+// Outcomes of adding an MCP server beside mcp's codes: the name is taken;
+// the server is saved but its tools come in the next session.
+const (
+	errMCPExists      errors.ErrorCode = "MCP_EXISTS"
+	errMCPNextSession errors.ErrorCode = "MCP_NEXT_SESSION"
+)
+
+// fitsOnDisk checks ringil.yaml as it is on disk with the server added,
+// as every change is checked (no file watched: nothing to check against).
+// The caller holds keepMu.
+func (c *cli) fitsOnDisk(name string, e mcpEntry) error {
+	if c.settings == nil || c.settings.path == "" {
+		return nil
+	}
+	cur, err := c.settings.onDisk(c)
+	if err != nil {
+		return agent.ToolError(mcp.ErrConfig, "ringil.yaml on disk is not valid, fix it first: "+describe(err))
+	}
+	next := cur.clone()
+	if next.MCPServers == nil {
+		next.MCPServers = map[string]mcpEntry{}
+	}
+	next.MCPServers[name] = e
+	if err := next.Validate(); err != nil {
+		return agent.ToolError(mcp.ErrConfig, "The server cannot be added: "+describe(err))
+	}
+	return nil
+}
+
 // addMCP saves the server under mcp_servers and, when its secrets are
 // all set, starts it and adds its tools to this session's.
 func (c *cli) addMCP(ctx context.Context, e mcp.Entry, resolve func() (secrets.Resolver, error)) (mcp.Added, error) {
 	if _, taken := c.conf().MCPServers[e.Name]; taken {
-		return mcp.Added{}, agent.ToolError(mcp.ErrConfig, "A server named "+e.Name+" is already configured: pick another name.")
+		return mcp.Added{}, agent.ToolError(errMCPExists, "A server named "+e.Name+" is already configured: pick another name.")
 	}
 	res, err := resolve()
 	if err != nil {
@@ -114,7 +143,7 @@ func (c *cli) attachServer(ctx context.Context, name string, e mcpEntry, res sec
 	}
 	if err := c.live.Add(tools...); err != nil {
 		_ = client.Close()
-		return mcp.Added{NextSession: true}, agent.ToolError(mcp.ErrConfig, "The server is saved, but a tool name clashes with one in use: it comes in the next session.")
+		return mcp.Added{NextSession: true}, agent.ToolError(errMCPNextSession, "The server is saved, but a tool name clashes with one in use: it comes in the next session.")
 	}
 	c.closers = append(c.closers, client.Close)
 	return added, nil
@@ -129,6 +158,12 @@ func (c *cli) saveServer(name string, e mcpEntry) error {
 	w, err := argus.NewConfigWriter(path, argus.FormatYAML, nil)
 	if err != nil {
 		return errors.Wrap(err, ErrUsage, path+" cannot be edited")
+	}
+	if w.GetValue("mcp_servers."+name) != nil { // on disk: one saved since this session read the file
+		return agent.ToolError(errMCPExists, "A server named "+name+" is already configured: pick another name.")
+	}
+	if err := c.fitsOnDisk(name, e); err != nil {
+		return err
 	}
 	ed := &edit{w: w}
 	key := "mcp_servers." + name + "."

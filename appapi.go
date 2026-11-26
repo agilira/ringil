@@ -17,6 +17,7 @@ import (
 	"github.com/agilira/argus"
 	"github.com/agilira/go-errors"
 	"github.com/agilira/orpheus"
+	agent "github.com/agilira/ringil-agent-sdk"
 
 	"github.com/agilira/ringil-agent-sdk/mcp"
 	"github.com/agilira/ringil-agent-sdk/secrets"
@@ -166,9 +167,8 @@ func (c *cli) putModels(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &in) {
 		return
 	}
-	next := c.conf().clone()
-	next.Models = in.Models
-	c.change(w, next, func(ed *edit) { ed.set("models", in.Models) })
+	c.change(w, func(next *config) *refusal { next.Models = in.Models; return nil },
+		func(ed *edit) { ed.set("models", in.Models) })
 }
 
 type limitsIn struct {
@@ -181,9 +181,10 @@ func (c *cli) putLimits(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &in) {
 		return
 	}
-	next := c.conf().clone()
-	next.MaxCost, next.WorkflowCost = in.MaxCost, in.WorkflowCost
-	c.change(w, next, func(ed *edit) {
+	c.change(w, func(next *config) *refusal {
+		next.MaxCost, next.WorkflowCost = in.MaxCost, in.WorkflowCost
+		return nil
+	}, func(ed *edit) {
 		ed.set("max_cost", zeroAsNone(in.MaxCost))
 		ed.set("workflow_cost", zeroAsNone(in.WorkflowCost))
 	})
@@ -211,10 +212,11 @@ func (c *cli) putVoice(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, "SETTINGS_INPUT", "a voice is for speech, not transcription")
 		return
 	}
-	next := c.conf().clone()
-	next.Transcribe = audioConfig{Provider: in.Transcribe.Provider, Model: in.Transcribe.Model}
-	next.Speech = audioConfig{Provider: in.Speech.Provider, Model: in.Speech.Model, Voice: in.Speech.Voice}
-	c.change(w, next, func(ed *edit) {
+	c.change(w, func(next *config) *refusal {
+		next.Transcribe = audioConfig{Provider: in.Transcribe.Provider, Model: in.Transcribe.Model}
+		next.Speech = audioConfig{Provider: in.Speech.Provider, Model: in.Speech.Model, Voice: in.Speech.Voice}
+		return nil
+	}, func(ed *edit) {
 		ed.set("transcribe", nil)
 		ed.set("speech", nil)
 		ed.merge("transcribe", "provider", in.Transcribe.Provider, "model", in.Transcribe.Model)
@@ -234,9 +236,7 @@ func (c *cli) putProvider(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &in) {
 		return
 	}
-	next := c.conf().clone()
-	next.Providers[name] = providerEntry(in)
-	c.change(w, next, func(ed *edit) {
+	c.change(w, func(next *config) *refusal { next.Providers[name] = providerEntry(in); return nil }, func(ed *edit) {
 		ed.set("providers."+name, map[string]interface{}{})
 		ed.set("providers."+name+".kind", in.Kind)
 		ed.set("providers."+name+".base", in.Base)
@@ -246,13 +246,13 @@ func (c *cli) putProvider(w http.ResponseWriter, r *http.Request) {
 
 func (c *cli) deleteProvider(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
-	next := c.conf().clone()
-	if _, ok := next.Providers[name]; !ok {
-		fail(w, http.StatusNotFound, "SETTINGS_NOT_FOUND", "no provider "+name+" of your own in ringil.yaml")
-		return
-	}
-	delete(next.Providers, name)
-	c.change(w, next, func(ed *edit) { ed.set("providers."+name, nil) })
+	c.change(w, func(next *config) *refusal {
+		if _, ok := next.Providers[name]; !ok {
+			return notFound("no provider " + name + " of your own in ringil.yaml")
+		}
+		delete(next.Providers, name)
+		return nil
+	}, func(ed *edit) { ed.set("providers."+name, nil) })
 }
 
 func (c *cli) providerModels(octx *orpheus.Context) http.HandlerFunc {
@@ -351,24 +351,30 @@ func (c *cli) postMCP(octx *orpheus.Context) http.HandlerFunc {
 			return
 		}
 		added, err := c.addMCP(r.Context(), e, func() (secrets.Resolver, error) { return c.resolver(octx) })
-		if err != nil {
+		switch {
+		case errors.HasCode(err, mcp.ErrConnect), errors.HasCode(err, errMCPNextSession): // saved, but not started now
+			c.settings.signal()
+			writeJSON(w, http.StatusCreated, map[string]any{"tools": []string{}, "missing": []string{}, "warning": agent.ModelMessage(err)})
+		case errors.HasCode(err, errMCPExists):
+			fail(w, http.StatusConflict, "SETTINGS_EXISTS", agent.ModelMessage(err))
+		case err != nil:
 			fail(w, http.StatusBadRequest, "SETTINGS_MCP", describe(err))
-			return
+		default:
+			c.settings.signal()
+			writeJSON(w, http.StatusCreated, map[string]any{"tools": nonNil(added.Tools), "missing": nonNil(added.Missing)})
 		}
-		c.settings.signal()
-		writeJSON(w, http.StatusCreated, map[string]any{"tools": added.Tools, "missing": added.Missing})
 	}
 }
 
 func (c *cli) deleteMCP(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
-	next := c.conf().clone()
-	if _, ok := next.MCPServers[name]; !ok {
-		fail(w, http.StatusNotFound, "SETTINGS_NOT_FOUND", "no MCP server "+name)
-		return
-	}
-	delete(next.MCPServers, name)
-	c.change(w, next, func(ed *edit) { ed.set("mcp_servers."+name, nil) })
+	c.change(w, func(next *config) *refusal {
+		if _, ok := next.MCPServers[name]; !ok {
+			return notFound("no MCP server " + name)
+		}
+		delete(next.MCPServers, name)
+		return nil
+	}, func(ed *edit) { ed.set("mcp_servers."+name, nil) })
 }
 
 type skillIn struct {
@@ -407,12 +413,51 @@ func (c *cli) deleteSkill(w http.ResponseWriter, r *http.Request) {
 
 // change writes a change to ringil.yaml when next, the whole file with
 // it, passes every check; the rest of the file stays as it is.
-func (c *cli) change(w http.ResponseWriter, next *config, apply func(*edit)) {
-	if err := next.Validate(); err != nil {
+// refusal is a change refused before anything is written.
+type refusal struct {
+	status     int
+	code, what string
+}
+
+func notFound(what string) *refusal {
+	return &refusal{http.StatusNotFound, "SETTINGS_NOT_FOUND", what}
+}
+
+// change makes one change to ringil.yaml, one at a time, on the file as
+// it is on disk (a change by hand, or by the request before, is counted;
+// a file that is not valid is said, not changed on top): mutate checks and
+// makes the change on a copy, which must pass every check a revision
+// passes; then apply writes it, and the watcher is woken.
+func (c *cli) change(w http.ResponseWriter, mutate func(next *config) *refusal, apply func(*edit)) {
+	c.keepMu.Lock()
+	defer c.keepMu.Unlock()
+	path := ""
+	if c.settings != nil {
+		path = c.settings.path
+	}
+	if path == "" {
+		fail(w, http.StatusConflict, "SETTINGS_NO_FILE", "serve runs without a configuration directory: there is no ringil.yaml to change")
+		return
+	}
+	cur, err := c.settings.onDisk(c)
+	if err != nil {
+		fail(w, http.StatusConflict, "SETTINGS_FILE", "ringil.yaml on disk is not valid, fix it first: "+describe(err))
+		return
+	}
+	next := cur.clone()
+	if r := mutate(next); r != nil {
+		fail(w, r.status, r.code, r.what)
+		return
+	}
+	err = next.Validate()
+	if err == nil {
+		err = c.settings.acceptable(next)
+	}
+	if err != nil {
 		fail(w, http.StatusBadRequest, "SETTINGS_INPUT", describe(err))
 		return
 	}
-	if err := c.editConfig(apply); err != nil {
+	if err := writeSettings(path, apply); err != nil {
 		fail(w, http.StatusInternalServerError, "SETTINGS_WRITE", describe(err))
 		return
 	}
@@ -420,14 +465,9 @@ func (c *cli) change(w http.ResponseWriter, next *config, apply func(*edit)) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// editConfig changes ringil.yaml through argus's writer, after a backup.
-func (c *cli) editConfig(apply func(*edit)) error {
-	c.keepMu.Lock()
-	defer c.keepMu.Unlock()
-	path := c.configName()
-	if path == "" {
-		return errors.New(ErrUsage, "serve runs without ringil.yaml: there is no file to change")
-	}
+// writeSettings changes the file through argus's writer, after a backup.
+// The caller holds keepMu.
+func writeSettings(path string, apply func(*edit)) error {
 	wr, err := argus.NewConfigWriter(path, argus.FormatYAML, nil)
 	if err != nil {
 		return errors.Wrap(err, ErrUsage, path+" cannot be edited")
@@ -475,4 +515,12 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 
 func fail(w http.ResponseWriter, code int, errCode, message string) {
 	writeJSON(w, code, map[string]map[string]string{"error": {"code": errCode, "message": message}})
+}
+
+// nonNil is list, [] for none: an app reads a list, not null.
+func nonNil(list []string) []string {
+	if list == nil {
+		return []string{}
+	}
+	return list
 }

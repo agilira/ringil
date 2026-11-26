@@ -256,24 +256,32 @@ func (s *settings) open(c *cli, paths []string) (*watch, *config, error) {
 
 // setup is the Argus setup of open, not started.
 func (s *settings) setup(c *cli, paths []string) (*argus.SetupBuilder, error) {
+	return s.setupOf(c, paths, false)
+}
+
+// setupOf is setup; quiet, one read once (onDisk): no audit, no wake of
+// the watcher, no word of an error (the caller has it).
+func (s *settings) setupOf(c *cli, paths []string, quiet bool) (*argus.SetupBuilder, error) {
 	for _, p := range paths {
 		if strings.ContainsAny(p, "*?[") {
 			return nil, errors.New(ErrUsage, "an instructions file's path cannot hold * ? or [: "+p)
 		}
 	}
 	b := argus.Setup("ringil").MaxStaleness(s.every).
-		DocumentLimits(agent.MaxInstructions+1, 32<<20, 2000).
-		OnReload(func(*argus.Settings, argus.Change) { s.signal() }).
-		OnError(func(err error) {
-			c.note(cmp.Or(s.path, "the configuration") + " not applied, the last good one stays: " + err.Error())
-		})
+		DocumentLimits(agent.MaxInstructions+1, 32<<20, 2000)
+	if !quiet {
+		b = b.OnReload(func(*argus.Settings, argus.Change) { s.signal() }).
+			OnError(func(err error) {
+				c.note(cmp.Or(s.path, "the configuration") + " not applied, the last good one stays: " + err.Error())
+			})
+	}
 	if s.path != "" {
 		b = b.FileIfPresent(s.path)
 	}
 	if s.skills != "" {
 		b = b.Documents("skills", filepath.Join(s.skills, "**", "SKILL.md"))
 	}
-	if s.audit != nil {
+	if s.audit != nil && !quiet {
 		b = b.AuditTo(s.audit)
 	}
 	for _, p := range paths {
@@ -355,6 +363,43 @@ func (s *settings) loop(c *cli) {
 		}
 		s.step(c)
 	}
+}
+
+// onDisk is the configuration the file holds now, read by a setup of its
+// own (the watcher's follows the file a few seconds late), with the
+// checks a revision passes before it is applied.
+func (s *settings) onDisk(c *cli) (*config, error) {
+	var paths []string
+	for range 3 {
+		b, err := s.setupOf(c, paths, true)
+		if err != nil {
+			return nil, err
+		}
+		watched, err := b.Start()
+		if err != nil {
+			return nil, err
+		}
+		w := &watch{argus: watched, paths: paths}
+		f, err := func() (*config, error) {
+			defer func() { _ = watched.Close() }()
+			if w.bound, err = argus.Bind[config](watched, argus.Strict()); err != nil {
+				return nil, err
+			}
+			return s.read(w)
+		}()
+		if stderrors.Is(err, errMoved) {
+			paths = s.pathsOf(f)
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		if err := f.Validate(); err != nil {
+			return nil, err
+		}
+		return f, s.acceptable(f)
+	}
+	return nil, errors.New(ErrUsage, s.path+" kept changing while it was read")
 }
 
 // step brings the configuration in force to the revision on disk, or

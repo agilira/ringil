@@ -133,7 +133,7 @@ func TestAddMCPTakenName(t *testing.T) {
 	addHarness(t, func(c *cli, path string) {
 		before := readText(t, path)
 		_, err := c.addMCP(context.Background(), mcp.Entry{Name: "old", Command: []string{"x"}}, resolveWith(nil))
-		if !errors.HasCode(err, mcp.ErrConfig) || !strings.Contains(agent.ModelMessage(err), "already configured") {
+		if !errors.HasCode(err, errMCPExists) || !strings.Contains(agent.ModelMessage(err), "already configured") {
 			t.Fatalf("err %v", err)
 		}
 		if readText(t, path) != before {

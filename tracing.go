@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/agilira/go-errors"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
@@ -30,10 +31,13 @@ import (
 )
 
 // tracing is the process's tracer provider, made once, the first time a
-// run needs it; nil inside when no endpoint is set.
+// run needs it; nil inside when no endpoint is set. rec follows the runs
+// of every agent of the process (the chat's, its workers', serve's), so
+// that a delegated run finds the call that started it.
 type tracing struct {
 	once sync.Once
 	tp   *sdktrace.TracerProvider
+	rec  *ringilotel.Recorder
 	err  error
 }
 
@@ -41,11 +45,16 @@ type tracing struct {
 // variables of the environment: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT is the
 // whole address, OTEL_EXPORTER_OTLP_ENDPOINT a base that /v1/traces is
 // added to. "" means no tracing.
+// OTEL_SDK_DISABLED=true or OTEL_TRACES_EXPORTER=none turn them off.
 func (c *cli) traceEndpoint() (endpoint, headers string) {
+	if strings.EqualFold(strings.TrimSpace(c.getenv("OTEL_SDK_DISABLED")), "true") ||
+		strings.EqualFold(strings.TrimSpace(c.getenv("OTEL_TRACES_EXPORTER")), "none") {
+		return "", ""
+	}
 	if v := strings.TrimSpace(c.getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")); v != "" {
 		endpoint = v
 	} else if v := strings.TrimSpace(c.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")); v != "" {
-		endpoint = strings.TrimRight(v, "/") + "/v1/traces"
+		endpoint = baseTraces(v)
 	}
 	for _, name := range []string{"OTEL_EXPORTER_OTLP_TRACES_HEADERS", "OTEL_EXPORTER_OTLP_HEADERS"} {
 		if v := c.getenv(name); v != "" {
@@ -55,6 +64,16 @@ func (c *cli) traceEndpoint() (endpoint, headers string) {
 	return endpoint, ""
 }
 
+// baseTraces is a base address with /v1/traces added to its path,
+// escapes kept; one that does not parse is left to tracesURL to refuse.
+func baseTraces(base string) string {
+	u, err := url.Parse(base)
+	if err != nil {
+		return base
+	}
+	return u.JoinPath("v1", "traces").String()
+}
+
 // tracer is the provider, made on first use.
 func (c *cli) tracer(ctx context.Context) (*sdktrace.TracerProvider, error) {
 	c.traces.once.Do(func() {
@@ -62,9 +81,41 @@ func (c *cli) tracer(ctx context.Context) (*sdktrace.TracerProvider, error) {
 		if endpoint == "" {
 			return
 		}
+		if err := c.traceProtocol(); err != nil {
+			c.traces.err = err
+			return
+		}
 		c.traces.tp, c.traces.err = newTracerProvider(ctx, endpoint, headers, c.getenv("OTEL_SERVICE_NAME"))
+		if c.traces.tp != nil {
+			c.traces.rec = ringilotel.New(c.traces.tp.Tracer("ringil"))
+			otel.SetErrorHandler(otel.ErrorHandlerFunc(c.traceFailed))
+		}
 	})
 	return c.traces.tp, c.traces.err
+}
+
+// traceProtocol refuses a protocol other than OTLP over HTTP: the traces
+// would go nowhere without a word.
+func (c *cli) traceProtocol() error {
+	for _, name := range []string{"OTEL_EXPORTER_OTLP_TRACES_PROTOCOL", "OTEL_EXPORTER_OTLP_PROTOCOL"} {
+		switch p := strings.TrimSpace(c.getenv(name)); p {
+		case "":
+			continue
+		case "http/protobuf":
+			return nil
+		default:
+			return errors.New(ErrUsage, name+"="+p+": ringil sends traces as http/protobuf (port 4318), set that or unset it")
+		}
+	}
+	return nil
+}
+
+// traceFailed says once that traces could not be sent, in the CLI's own
+// voice rather than the library's log line in the middle of a chat.
+func (c *cli) traceFailed(err error) {
+	if c.traceWarned.CompareAndSwap(false, true) {
+		_ = c.line("  * traces: cannot send them (" + err.Error() + "); the run goes on")
+	}
 }
 
 func newTracerProvider(ctx context.Context, endpoint, headers, service string) (*sdktrace.TracerProvider, error) {
@@ -93,6 +144,9 @@ func tracesURL(endpoint string) (string, error) {
 	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
 		return "", errors.New(ErrUsage, "OTEL_EXPORTER_OTLP_ENDPOINT must be an http(s) address, such as https://otel.example.com:4318")
 	}
+	if u.RawQuery != "" { // the exporter posts to scheme, host and path only
+		return "", errors.New(ErrUsage, "the OTLP endpoint cannot carry a query (?...): the exporter drops it; put a token in OTEL_EXPORTER_OTLP_HEADERS")
+	}
 	return u.String(), nil
 }
 
@@ -106,7 +160,7 @@ func parseHeaders(s string) map[string]string {
 		if !ok || k == "" {
 			continue
 		}
-		if dec, err := url.QueryUnescape(strings.TrimSpace(v)); err == nil {
+		if dec, err := url.PathUnescape(strings.TrimSpace(v)); err == nil { // as the SDK: "+" stays "+"
 			v = dec
 		}
 		out[k] = v
@@ -128,7 +182,7 @@ func (c *cli) observers(ctx context.Context) []agent.Observer {
 		if name == "" {
 			name = "ringil"
 		}
-		out = append(out, ringilotel.Observer(tp.Tracer("ringil"), ringilotel.Options{Agent: name}))
+		out = append(out, c.traces.rec.Observer(ringilotel.Options{Agent: name}))
 	}
 	return out
 }
@@ -136,7 +190,11 @@ func (c *cli) observers(ctx context.Context) []agent.Observer {
 // flushTraces sends the traces still queued, at exit: at most a few
 // seconds, so an endpoint that does not answer does not hold the exit.
 func (c *cli) flushTraces() {
-	if c.traces == nil || c.traces.tp == nil {
+	if c.traces == nil {
+		return
+	}
+	c.traces.once.Do(func() {}) // waits for one being made; none made, none now
+	if c.traces.tp == nil {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
