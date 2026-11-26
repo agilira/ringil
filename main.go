@@ -37,7 +37,14 @@ func main() {
 func run(ctx context.Context, args []string, c *cli) int {
 	defer func() { _ = c.secrets.Close() }() // #nosec G104 -- the stores opened; nothing to report at exit
 	defer c.flushTraces()
-	if err := c.app().RunContext(ctx, args); err != nil {
+	err := c.app().RunContext(ctx, args)
+	if c.pendingImport() { // serve stopped for an import from the app: done, it starts again
+		c.flushTraces()
+		_ = c.secrets.Close() // #nosec G104 -- as above
+		c.restart()
+		c.note("ringil could not start again by itself: start it again (ringil serve)")
+	}
+	if err != nil {
 		return report(c.errOut, err)
 	}
 	return exitOK

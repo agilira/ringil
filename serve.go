@@ -68,6 +68,7 @@ func (c *cli) cmdServe(ctx *orpheus.Context) error {
 	}
 	run, stop := signal.NotifyContext(ctx.Context(), os.Interrupt)
 	defer stop()
+	c.imports.stop = stop // an import from the app stops serve, which then imports and starts again
 	stopAll, err := c.startBackground(ctx, run, srv)
 	if err != nil {
 		return err
@@ -131,6 +132,7 @@ func (c *cli) newServer(ctx *orpheus.Context) (*serve.Server, string, error) {
 	}
 	srv.Mount("GET /metrics", c.metrics.Handler()) // behind the token: the counts tell what the agents do
 	c.mountSettings(ctx, srv)
+	c.mountState(ctx, srv)
 	return srv, where, nil
 }
 

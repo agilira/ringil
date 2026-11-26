@@ -123,6 +123,18 @@ func (c *cli) loadConfig(ctx *orpheus.Context) error {
 	if c.settings != nil {
 		return nil
 	}
+	if err := c.useState(); err != nil { // first: an import waits for every ringil to let the state go
+		return err
+	}
+	if err := c.loadSettings(ctx); err != nil {
+		c.shutdown() // the state's lock, taken above, goes with the failure
+		return err
+	}
+	return nil
+}
+
+// loadSettings is loadConfig's reading and watching of the file.
+func (c *cli) loadSettings(ctx *orpheus.Context) error {
 	path, explicit := c.configPath(ctx)
 	if _, err := os.Lstat(path); path != "" && (err == nil || explicit) {
 		if _, err := readPrivate(path); err != nil {

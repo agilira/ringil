@@ -52,6 +52,7 @@ func newHarness(t *testing.T, input string, steps ...fake.Step) *harness {
 	h.c.configDir = func() (string, error) { return h.dir, nil }
 	h.c.dataDir = func() (string, error) { return filepath.Join(h.dir, "data"), nil }
 	h.c.home = func() (string, error) { return "", os.ErrNotExist }
+	h.c.restart = func() {} // a test never starts itself again
 	return h
 }
 

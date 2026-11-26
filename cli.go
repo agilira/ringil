@@ -96,6 +96,10 @@ type cli struct {
 	// ws is the file tools' workspace, once made: what the agent may read,
 	// for the tools that take a file it made (save_file_artifact).
 	ws files.Workspace
+	// imports is the import the app asked for, applied when serve ends;
+	// restart starts the process again after it (a test's does not).
+	imports *importing
+	restart func()
 	// askMu keeps one question on screen at a time: workers run in
 	// parallel and may all need the user.
 	askMu sync.Mutex
@@ -209,6 +213,8 @@ func newCLI(in io.Reader, out, errOut io.Writer) *cli {
 		newProvider:  openai.New,
 		newAnthropic: anthropic.New,
 		signIns:      &signIns{},
+		imports:      &importing{},
+		restart:      restart,
 		turnContext: func(ctx context.Context) (context.Context, context.CancelFunc) {
 			return signal.NotifyContext(ctx, os.Interrupt)
 		},
@@ -271,7 +277,7 @@ func (c *cli) app() *orpheus.App {
 	app.AddCommand(orpheus.NewCommand("login", "Sign in with a ChatGPT subscription (Plus, Pro, Business): ringil login chatgpt").SetHandler(c.withConfig(c.cmdLogin)).
 		SetUsage("login chatgpt").AddBoolFlag("device", "", false, "sign in by a code typed on any device (no browser here: a server, SSH)"))
 	app.AddCommand(orpheus.NewCommand("logout", "Sign out of ChatGPT: revoke the sign-in and forget it").SetHandler(c.withConfig(c.cmdLogout)).SetUsage("logout chatgpt"))
-	app.AddCommand(orpheus.NewCommand("setup", "Set ringil up, with a few questions: where keys are kept, the model, your system prompt, the memory, a Telegram bot").SetHandler(c.cmdSetup))
+	app.AddCommand(orpheus.NewCommand("setup", "Set ringil up, with a few questions: where keys are kept, the model, your system prompt, the memory, a Telegram bot").SetHandler(c.holdingState(c.cmdSetup)))
 	app.AddCommand(orpheus.NewCommand("secrets", "Keep keys in the store of ringil.yaml's secrets section (keyring, vault or file)").
 		AddSubcommand(orpheus.NewCommand("set", "Save a secret; its value is read from standard input, without echo at a terminal").SetHandler(c.withConfig(c.cmdSecretsSet)).SetUsage("secrets set <NAME>")).
 		AddSubcommand(orpheus.NewCommand("rm", "Delete a secret").SetHandler(c.withConfig(c.cmdSecretsRemove)).SetUsage("secrets rm <NAME>")).
@@ -292,10 +298,10 @@ func (c *cli) app() *orpheus.App {
 		AddSubcommand(orpheus.NewCommand("show", "Print an artifact (control characters removed; --raw for the exact bytes)").SetHandler(c.withConfig(c.cmdArtifactShow)).SetUsage("artifact show <name>").
 			AddBoolFlag("raw", "", false, "write the exact bytes, for redirecting to a file")).
 		AddSubcommand(orpheus.NewCommand("rm", "Delete artifacts").SetHandler(c.withConfig(c.cmdArtifactRemove)).SetUsage("artifact rm <name...>")))
-	app.AddCommand(orpheus.NewCommand("state", "Back up, check and restore the agent's state").SetHandler(c.withConfig(c.cmdStateHelp)).
-		AddSubcommand(orpheus.NewCommand("backup", "Save the agent's state to a new archive").SetHandler(c.withConfig(c.cmdStateBackup)).SetUsage("state backup <file.tar.gz>")).
-		AddSubcommand(orpheus.NewCommand("verify", "Check an archive without extracting it").SetHandler(c.withConfig(c.cmdStateVerify)).SetUsage("state verify <file.tar.gz>")).
-		AddSubcommand(orpheus.NewCommand("restore", "Restore an archive into a new directory, in quarantine").SetHandler(c.withConfig(c.cmdStateRestore)).SetUsage("state restore <file.tar.gz> <dir>")))
+	app.AddCommand(orpheus.NewCommand("state", "Export the agent's state, check an archive, import one").SetHandler(c.cmdStateHelp).
+		AddSubcommand(orpheus.NewCommand("export", "Save the agent's state to a new archive").SetHandler(c.withConfig(c.cmdStateExport)).SetUsage("state export <file.tar.gz>")).
+		AddSubcommand(orpheus.NewCommand("verify", "Check an archive without extracting it").SetHandler(c.cmdStateVerify).SetUsage("state verify <file.tar.gz>")).
+		AddSubcommand(orpheus.NewCommand("import", "Replace the state with an archive's, keeping a copy of it before").SetHandler(c.cmdStateImport).SetUsage("state import <file.tar.gz>")))
 	app.AddCommand(withWorkspace(orpheus.NewCommand("automate", "Make something happen by itself from now on: a trigger, shown before it is made").SetHandler(c.withConfig(c.cmdAutomate)).
 		SetUsage("automate <what, e.g. every weekday at 8 summarize my mail>")))
 	app.AddCommand(orpheus.NewCommand("trigger", "List the triggers `ringil serve` runs: on a time, a change, a message, a webhook").SetHandler(c.withConfig(c.cmdTrigger)).
